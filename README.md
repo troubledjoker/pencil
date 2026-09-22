@@ -53,7 +53,7 @@ with a small fallback item in the menu bar.
 
 - Collapsed, it's a small pencil tile (the Pencil icon artwork) peeking half out of the left
   edge. Hover it and it slides all the way out (and back in as soon as you move away). It
-  stays fully out while you draw, record or drag it. The pencil stands upright in it; on hover it tips to the icon's diagonal and stays that way as the toolbar opens (and stands back up when it closes). It lifts slightly when you hover it, gets a ring in the current ink color while a drawing mode is on,
+  stays fully out while you draw, record or drag it. The pencil stands upright in it; on hover, while a drawing mode is on, and while the toolbar is open it tips down to the icon's diagonal (and stands back up when it closes). It lifts slightly when you hover it, gets a ring in the current ink color while a drawing mode is on,
   and a red dot while recording.
 - **Click the pencil** to open the toolbar in place. The pencil stays exactly where it is and
   becomes the toolbar's handle; the toolbar grows out of it. Collapsing reverses that.

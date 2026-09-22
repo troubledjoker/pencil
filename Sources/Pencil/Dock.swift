@@ -288,8 +288,15 @@ final class DockController {
         applyLayout(expanded: false, duration: changed && !reduce ? Self.peekDuration : (changed ? 0 : 0.14))
     }
 
+    private func artAngle(expanded: Bool) -> CGFloat {
+        if expanded || controller.mode.isDrawing { return DockPencilView.openAngle }
+        return tileIsOut && hovering ? DockPencilView.hoverAngle : DockPencilView.uprightAngle
+    }
+
     func refresh() {
         pencil.ringColor = controller.mode.isDrawing ? nsColor(controller.color) : nil
+        pencil.setArtAngle(artAngle(expanded: isExpanded),
+                           animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         let recording = controller.recorder.isRecording
         pencil.isRecording = recording
         recordButton.isSelected = recording
@@ -424,10 +431,9 @@ final class DockController {
         }
 
         // The pencil tips over as the toolbar opens (same start time), stands back up as
-        // it closes, and tilts a little on hover.
-        let angle: CGFloat = expanded ? DockPencilView.openAngle
-            : (tileIsOut && hovering ? DockPencilView.hoverAngle : DockPencilView.uprightAngle)
-        pencil.setArtAngle(angle, animated: duration > 0 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        // it closes, and tips on hover. While a drawing mode is on it stays "down", writing.
+        pencil.setArtAngle(artAngle(expanded: expanded),
+                           animated: duration > 0 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
 
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = duration
