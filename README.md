@@ -5,16 +5,37 @@ Claude Code. It's a small native macOS app (Swift + AppKit, macOS 14+).
 
 ## Cheat sheet
 
-| Anywhere | |
+Every feature has a global key (they work from any app, with the dock collapsed):
+
+| Draw | |
 | --- | --- |
 | **⌥1** | Laser. Press again to turn it off |
-| **⌥2** | Pen. Press again to turn it off (Off hides the ink) |
+| **⌥2** | Pen. Press again to turn it off |
+| **⌥7** | Highlighter. Press again to turn it off |
+| **⌥0** | Off: stop drawing and hide the ink |
+
+| Edit | |
+| --- | --- |
+| **⌥Z** | Undo |
+| **⌥X** | Clear all ink |
+
+| Capture | |
+| --- | --- |
 | **⌥3** | Snapshot the screen under the mouse, ink included, to a file and the clipboard |
 | **⌥4** | Region capture to a file and the clipboard |
-| **⌥5** | Start / stop a screen recording |
 | **⇧⌥4** | Burst: capture several regions in a row, Esc when done |
-| **⌥⇧V** | Paste the last burst one by one (for apps that take one image per paste) |
+| **⌥6** | Capture the drawing: cropped to the ink plus some room (whole screen if there's no ink) |
+| **⌥5** | Start / stop a screen recording |
+
+| Clipboard | |
+| --- | --- |
 | **⌃⌘V** | Clipboard history |
+| **⌥⇧V** | Paste the last burst one by one (for apps that take one image per paste) |
+
+| Pencil | |
+| --- | --- |
+| **⌥9** | Open / close the toolbar |
+| **⌥/** | Show the keyboard shortcuts on screen |
 
 | While drawing (no modifier) | |
 | --- | --- |
@@ -26,6 +47,8 @@ Claude Code. It's a small native macOS app (Swift + AppKit, macOS 14+).
 | **S** / **A** | Snapshot screen / Region capture |
 | **Esc** | Stop drawing. Ink stays and clicks go through |
 | **?** | Show this cheat sheet |
+
+Pencil takes ⌥Z, ⌥X and ⌥/ globally, so those no longer type Ω, ≈ and ÷ while Pencil runs.
 
 If another app already owns one of these keys, Pencil says which one, once, in a toast. If
 one of them is also a macOS shortcut (for example "Copy picture of selected area to the

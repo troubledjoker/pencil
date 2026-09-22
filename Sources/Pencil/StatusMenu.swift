@@ -11,6 +11,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let modeItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Start at login", action: nil, keyEquivalent: "")
     private let terminalPathsItem = NSMenuItem(title: "Paste images as file paths in terminals", action: nil, keyEquivalent: "")
+    /// Set by the app delegate: the dock lives there.
+    var onToggleDock: (() -> Void)?
+    var onCollapseDock: (() -> Void)?
     private let recordItem = NSMenuItem(title: "Start screen recording…", action: nil, keyEquivalent: "5")
 
     init(controller: AppController) {
@@ -36,6 +39,17 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         pen.keyEquivalentModifierMask = [.option]
         pen.target = self
         menu.addItem(pen)
+        func addOptionItem(_ title: String, _ key: String, _ action: Selector) {
+            let it = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            it.keyEquivalentModifierMask = [.option]
+            it.target = self
+            menu.addItem(it)
+        }
+        addOptionItem("Highlighter", "7", #selector(toggleHighlighter))
+        addOptionItem("Off (hide ink)", "0", #selector(turnOff))
+        addOptionItem("Undo", "z", #selector(undo))
+        addOptionItem("Clear all", "x", #selector(clearAll))
+        addOptionItem("Open / close toolbar", "9", #selector(toggleDock))
 
         let shot = NSMenuItem(title: "Snapshot screen", action: #selector(snapshotScreen), keyEquivalent: "3")
         shot.keyEquivalentModifierMask = [.option]
@@ -54,7 +68,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         pasteAll.target = self
         menu.addItem(pasteAll)
 
-        let drawing = NSMenuItem(title: "Capture drawing", action: #selector(captureDrawing), keyEquivalent: "")
+        let drawing = NSMenuItem(title: "Capture drawing", action: #selector(captureDrawing), keyEquivalent: "6")
+        drawing.keyEquivalentModifierMask = [.option]
         drawing.target = self
         menu.addItem(drawing)
         recordItem.target = self
@@ -62,7 +77,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         recordItem.keyEquivalentModifierMask = [.option]
         menu.addItem(recordItem)
 
-        let cheat = NSMenuItem(title: "Keyboard shortcuts…", action: #selector(showShortcuts), keyEquivalent: "")
+        let cheat = NSMenuItem(title: "Keyboard shortcuts…", action: #selector(showShortcuts), keyEquivalent: "/")
+        cheat.keyEquivalentModifierMask = [.option]
         cheat.target = self
         menu.addItem(cheat)
         menu.addItem(.separator())
@@ -158,6 +174,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func toggleClipboard() { ClipboardHistoryController.shared.toggle() }
     @objc private func toggleTerminalPaths() { TerminalPasteBridge.shared.isEnabled.toggle() }
+    @objc private func toggleHighlighter() { controller.toggleTool(.highlighter) }
+    @objc private func turnOff() {
+        controller.setMode(.off)
+        onCollapseDock?()
+    }
+    @objc private func undo() { controller.undo() }
+    @objc private func clearAll() { controller.clear() }
+    @objc private func toggleDock() { onToggleDock?() }
+
     @objc private func toggleLaser() { controller.toggleTool(.laser) }
     @objc private func togglePen() { controller.toggleTool(.pen) }
 

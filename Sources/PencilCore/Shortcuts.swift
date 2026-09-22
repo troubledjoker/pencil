@@ -14,17 +14,36 @@ public enum Shortcuts {
         public static let command = 1 << 20
     }
 
+    /// Every Pencil feature has exactly one global key. Adding a case forces a key code,
+    /// modifiers, label and title (the switches are exhaustive), and the tests check that
+    /// no two share a combo and every `Feature` has one.
     public enum Global: CaseIterable, Sendable {
-        case laser, pen, snapshot, region, record, burst, pasteAll, clipboard
+        // Draw
+        case laser, pen, highlighter, off
+        // Edit
+        case undo, clear
+        // Capture
+        case snapshot, region, burst, captureDrawing, record
+        // Clipboard
+        case clipboard, pasteAll
+        // Pencil
+        case toggleDock, shortcuts
 
         /// Virtual key code (kVK_ANSI_*).
         public var keyCode: Int {
             switch self {
-            case .laser: return 18      // 1
-            case .pen: return 19        // 2
-            case .snapshot: return 20   // 3
+            case .laser: return 18          // 1
+            case .pen: return 19            // 2
+            case .snapshot: return 20       // 3
             case .region, .burst: return 21 // 4
-            case .record: return 23     // 5
+            case .record: return 23         // 5
+            case .captureDrawing: return 22 // 6
+            case .highlighter: return 26    // 7
+            case .toggleDock: return 25     // 9
+            case .off: return 29            // 0
+            case .undo: return 6            // Z
+            case .clear: return 7           // X
+            case .shortcuts: return 44      // /
             case .pasteAll, .clipboard: return 9 // V
             }
         }
@@ -32,9 +51,9 @@ public enum Shortcuts {
         /// NSEvent-style modifier mask (see `Mods`).
         public var modifiers: Int {
             switch self {
-            case .laser, .pen, .snapshot, .region, .record: return Mods.option
             case .burst, .pasteAll: return Mods.option | Mods.shift
             case .clipboard: return Mods.control | Mods.command
+            default: return Mods.option
             }
         }
 
@@ -45,6 +64,13 @@ public enum Shortcuts {
             case .snapshot: return "⌥3"
             case .region: return "⌥4"
             case .record: return "⌥5"
+            case .captureDrawing: return "⌥6"
+            case .highlighter: return "⌥7"
+            case .toggleDock: return "⌥9"
+            case .off: return "⌥0"
+            case .undo: return "⌥Z"
+            case .clear: return "⌥X"
+            case .shortcuts: return "⌥/"
             case .burst: return "⇧⌥4"
             case .pasteAll: return "⌥⇧V"
             case .clipboard: return "⌃⌘V"
@@ -55,15 +81,58 @@ public enum Shortcuts {
             switch self {
             case .laser: return "Laser (press again to turn off)"
             case .pen: return "Pen (press again to turn off)"
+            case .highlighter: return "Highlighter (press again to turn off)"
+            case .off: return "Off: stop drawing and hide the ink"
+            case .undo: return "Undo"
+            case .clear: return "Clear all ink"
             case .snapshot: return "Snapshot screen, ink included"
             case .region: return "Region capture"
-            case .record: return "Start / stop screen recording"
             case .burst: return "Burst capture: several regions, Esc when done"
-            case .pasteAll: return "Paste the last burst one by one"
+            case .captureDrawing: return "Capture the drawing (cropped to the ink)"
+            case .record: return "Start / stop screen recording"
             case .clipboard: return "Clipboard history"
+            case .pasteAll: return "Paste the last burst one by one"
+            case .toggleDock: return "Open / close the toolbar"
+            case .shortcuts: return "Show this cheat sheet"
             }
         }
     }
+
+    /// Everything the toolbar, the Undo/Clear pill and the menu can do. Each maps to its
+    /// global key (exhaustive switch), so a new feature can't ship without one.
+    public enum Feature: CaseIterable, Sendable {
+        case laser, pen, highlighter, off, undo, clear, snapshot, region, burst, captureDrawing,
+             record, clipboard, pasteAll, toggleDock, shortcuts
+
+        public var global: Global {
+            switch self {
+            case .laser: return .laser
+            case .pen: return .pen
+            case .highlighter: return .highlighter
+            case .off: return .off
+            case .undo: return .undo
+            case .clear: return .clear
+            case .snapshot: return .snapshot
+            case .region: return .region
+            case .burst: return .burst
+            case .captureDrawing: return .captureDrawing
+            case .record: return .record
+            case .clipboard: return .clipboard
+            case .pasteAll: return .pasteAll
+            case .toggleDock: return .toggleDock
+            case .shortcuts: return .shortcuts
+            }
+        }
+    }
+
+    /// The cheat sheet's global sections.
+    public static let globalSections: [(title: String, keys: [Global])] = [
+        ("Draw", [.laser, .pen, .highlighter, .off]),
+        ("Edit", [.undo, .clear]),
+        ("Capture", [.snapshot, .region, .burst, .captureDrawing, .record]),
+        ("Clipboard", [.clipboard, .pasteAll]),
+        ("Pencil", [.toggleDock, .shortcuts]),
+    ]
 
     // MARK: Conflicts with macOS's own shortcuts
 

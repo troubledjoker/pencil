@@ -112,14 +112,27 @@ final class ShortcutsHUD {
             return g
         }
 
-        let stack = NSStackView(views: [
-            header("Anywhere"), grid(Shortcuts.globalRows),
-            header("While drawing (no modifier)"), grid(Shortcuts.drawingRows),
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.setCustomSpacing(16, after: stack.arrangedSubviews[1])
+        // Two columns: the global keys by group, and the single keys while drawing.
+        func column(_ views: [NSView], gapsAfter: [Int]) -> NSStackView {
+            let v = NSStackView(views: views)
+            v.orientation = .vertical
+            v.alignment = .leading
+            v.spacing = 6
+            for i in gapsAfter where i < views.count { v.setCustomSpacing(14, after: views[i]) }
+            return v
+        }
+        var left: [NSView] = []
+        var gaps: [Int] = []
+        for section in Shortcuts.globalSections {
+            left.append(header(section.title))
+            left.append(grid(section.keys.map { ($0.label, $0.title) }))
+            gaps.append(left.count - 1)
+        }
+        let right = column([header("While drawing (no modifier)"), grid(Shortcuts.drawingRows)], gapsAfter: [])
+        let stack = NSStackView(views: [column(left, gapsAfter: gaps), right])
+        stack.orientation = .horizontal
+        stack.alignment = .top
+        stack.spacing = 32
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 22, bottom: 18, right: 22)
         stack.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(stack)

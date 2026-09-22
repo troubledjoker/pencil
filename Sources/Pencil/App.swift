@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dock = DockController(controller: controller)
         let statusMenu = StatusMenuController(controller: controller)
         self.dock = dock
+        statusMenu.onToggleDock = { [weak dock] in dock?.toggleExpanded() }
+        statusMenu.onCollapseDock = { [weak dock] in dock?.setExpanded(false) }
         self.statusMenu = statusMenu
 
         controller.onStateChange = { [weak dock, weak statusMenu] in
@@ -50,16 +52,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func registerHotkeys() {
         let h = HotkeyCenter()
         let c = controller
+        let dock = self.dock
         func action(_ g: Shortcuts.Global) -> () -> Void {
             switch g {
             case .laser: return { c.toggleTool(.laser) }
             case .pen: return { c.toggleTool(.pen) }
+            case .highlighter: return { c.toggleTool(.highlighter) }
+            case .off: return {
+                // Like the toolbar's Off: stop drawing, hide the ink, collapse.
+                c.setMode(.off)
+                dock?.setExpanded(false)
+            }
+            case .undo: return { c.undo() }
+            case .clear: return { c.clear() }
             case .snapshot: return { c.snapshot(.screenUnderMouse) }
             case .region: return { c.snapshot(.region) }
-            case .record: return { c.toggleRecording() }
             case .burst: return { c.startBurst() }
-            case .pasteAll: return { BatchPaster.shared.pasteAll(toast: c.toast) }
+            case .captureDrawing: return { c.captureDrawing() }
+            case .record: return { c.toggleRecording() }
             case .clipboard: return { ClipboardHistoryController.shared.toggle() }
+            case .pasteAll: return { BatchPaster.shared.pasteAll(toast: c.toast) }
+            case .toggleDock: return { dock?.toggleExpanded() }
+            case .shortcuts: return { c.shortcutsHUD.show() }
             }
         }
         // A key macOS itself uses (e.g. a screenshot shortcut remapped to ⌥4) would fire

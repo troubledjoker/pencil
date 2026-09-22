@@ -160,7 +160,7 @@ final class DockController {
 
         let tools: [(Tool, String, String)] = [
             (.pen, "pencil.tip", Shortcuts.hint("Pen", .pen)),
-            (.highlighter, "highlighter", Shortcuts.hint("Highlighter")),
+            (.highlighter, "highlighter", Shortcuts.hint("Highlighter", .highlighter)),
             (.laser, "wand.and.rays", Shortcuts.hint("Laser", .laser)),
         ]
         var drawItems: [NSView] = []
@@ -201,7 +201,7 @@ final class DockController {
                     self?.controller.snapshot(.region)
                 }
             },
-            action("pencil.and.outline", Shortcuts.hint("Capture drawing")) { [weak self] in
+            action("pencil.and.outline", Shortcuts.hint("Capture drawing", .captureDrawing)) { [weak self] in
                 self?.controller.captureDrawing()
             },
             recordButton,
@@ -214,7 +214,7 @@ final class DockController {
         clipboardButton = clipboard
         sections.append(DockGroup([clipboard]))
 
-        let off = DockButton(symbol: "xmark.circle", hint: "Off (hide ink)")
+        let off = DockButton(symbol: "xmark.circle", hint: Shortcuts.hint("Off", .off))
         off.onClick = { [weak self] in
             self?.controller.setMode(.off)
             self?.setExpanded(false)
@@ -821,7 +821,8 @@ final class DockPencilView: DragSurface {
         art.position = CGPoint(x: artFrame.midX, y: artFrame.midY)
         recDot.frame = CGRect(x: bounds.maxX - 12, y: bounds.maxY - 12, width: 8, height: 8)
 
-        hint = isTab ? "Pencil — click to open" : "Pencil — click to collapse, drag to move"
+        let key = Shortcuts.Global.toggleDock.label
+        hint = isTab ? "Pencil  \(key)" : "Pencil  \(key) — click to collapse, drag to move"
         updateTrackingAreas()
     }
 
@@ -1368,8 +1369,8 @@ final class EditPill {
         effect.autoresizingMask = [.width, .height]
         panel.contentView = effect
 
-        let undo = DockButton(symbol: "arrow.uturn.backward", hint: "Undo · Z")
-        let clear = DockButton(symbol: "trash", hint: "Clear all · X")
+        let undo = DockButton(symbol: "arrow.uturn.backward", hint: "Undo  \(Shortcuts.Global.undo.label) · Z")
+        let clear = DockButton(symbol: "trash", hint: "Clear all  \(Shortcuts.Global.clear.label) · X")
         undo.onClick = { [weak self] in self?.onUndo?() }
         clear.onClick = { [weak self] in self?.onClear?() }
         undo.frame.origin = NSPoint(x: (size.width - undo.frame.width) / 2, y: size.height - 1 - undo.frame.height)

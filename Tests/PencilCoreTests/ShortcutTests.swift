@@ -18,14 +18,15 @@ final class ShortcutTests: XCTestCase {
 
     func testGlobalDigits() {
         XCTAssertEqual(Shortcuts.Global.allCases.map(\.label),
-                       ["⌥1", "⌥2", "⌥3", "⌥4", "⌥5", "⇧⌥4", "⌥⇧V", "⌃⌘V"])
+                       ["⌥1", "⌥2", "⌥7", "⌥0", "⌥Z", "⌥X", "⌥3", "⌥4", "⇧⌥4", "⌥6", "⌥5",
+                        "⌃⌘V", "⌥⇧V", "⌥9", "⌥/"])
         XCTAssertEqual(Shortcuts.Global.burst.keyCode, Shortcuts.Global.region.keyCode)
         XCTAssertEqual(Shortcuts.Global.pasteAll.modifiers, Shortcuts.Mods.option | Shortcuts.Mods.shift)
         XCTAssertEqual(Shortcuts.Global.region.label, "⌥4")
         XCTAssertEqual(Shortcuts.Global.record.label, "⌥5")
         XCTAssertEqual(Shortcuts.hint("Region capture", .region), "Region capture  ⌥4")
         XCTAssertEqual(Shortcuts.hint("Undo"), "Undo", "no global key: just the name")
-        XCTAssertEqual(Shortcuts.globalRows.last?.0, "⌃⌘V")
+        XCTAssertTrue(Shortcuts.globalRows.contains { $0.0 == "⌃⌘V" })
     }
 
     func testSingleKeys() {
@@ -70,5 +71,42 @@ final class ShortcutTests: XCTestCase {
         // ⇧⌥4 is a different combo: no conflict with ⌥4.
         let burstOnly: [String: Any] = ["31": ["enabled": true, "value": ["parameters": [52, 21, 524288 | 131072]]]]
         XCTAssertEqual(Shortcuts.systemConflicts(burstOnly).first?.0, .burst)
+    }
+
+    // MARK: Every feature has a unique global key
+
+    func testEveryGlobalComboIsUnique() {
+        let combos = Shortcuts.Global.allCases.map { "\($0.keyCode)/\($0.modifiers)" }
+        XCTAssertEqual(Set(combos).count, combos.count, "two globals share a key combo")
+        let labels = Shortcuts.Global.allCases.map(\.label)
+        XCTAssertEqual(Set(labels).count, labels.count)
+    }
+
+    /// Table-driven: every toolbar / pill / menu feature must have a global key, and no two
+    /// features may share one. Adding a Feature without wiring a Global fails to compile
+    /// (exhaustive switch); reusing one fails here.
+    func testEveryFeatureHasItsOwnGlobalKey() {
+        let expected: [Shortcuts.Feature: String] = [
+            .laser: "⌥1", .pen: "⌥2", .highlighter: "⌥7", .off: "⌥0",
+            .undo: "⌥Z", .clear: "⌥X",
+            .snapshot: "⌥3", .region: "⌥4", .burst: "⇧⌥4", .captureDrawing: "⌥6", .record: "⌥5",
+            .clipboard: "⌃⌘V", .pasteAll: "⌥⇧V",
+            .toggleDock: "⌥9", .shortcuts: "⌥/",
+        ]
+        for feature in Shortcuts.Feature.allCases {
+            XCTAssertEqual(feature.global.label, expected[feature], "\(feature) has no (or the wrong) global key")
+        }
+        XCTAssertEqual(expected.count, Shortcuts.Feature.allCases.count, "a feature is missing from this table")
+        let globals = Shortcuts.Feature.allCases.map(\.global)
+        XCTAssertEqual(Set(globals.map(\.label)).count, globals.count, "two features share a global key")
+        XCTAssertEqual(Set(Shortcuts.Global.allCases.map(\.label)), Set(globals.map(\.label)),
+                       "every global key belongs to a feature")
+    }
+
+    func testCheatSheetSectionsCoverEveryGlobalOnce() {
+        let listed = Shortcuts.globalSections.flatMap(\.keys).map(\.label)
+        XCTAssertEqual(listed.count, Shortcuts.Global.allCases.count)
+        XCTAssertEqual(Set(listed), Set(Shortcuts.Global.allCases.map(\.label)))
+        XCTAssertEqual(Shortcuts.globalSections.map(\.title), ["Draw", "Edit", "Capture", "Clipboard", "Pencil"])
     }
 }
