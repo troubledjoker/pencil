@@ -208,9 +208,12 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         setConfirming(false)
 
         // Full height of the visible frame, flush with its right edge (left of a right-side Dock).
+        // On notched displays visibleFrame reserves a few points more than the menu bar itself
+        // (38 vs 32), leaving a sliver of wallpaper; run up to the menu bar's real bottom instead.
         let v = screen.visibleFrame
+        let menuBarBottom = screen.safeAreaInsets.top > 0 ? screen.frame.maxY - screen.safeAreaInsets.top : v.maxY
         let w = Self.width
-        let h = v.height
+        let h = max(v.maxY, menuBarBottom) - v.minY
         let target = NSRect(x: v.maxX - w, y: v.minY, width: w, height: h)
         openFrame = target
         // One sheet: the WINDOW slides and fades as a whole; nothing inside animates on its own.
