@@ -109,6 +109,28 @@ public enum DockGeometry {
         return (r, d)
     }
 
+    /// Where the floating Undo/Clear pill goes, next to `anchor` (the collapsed tile, or
+    /// the open toolbar's background) on the screen edge at `x`.
+    ///
+    /// It prefers the side given by `preferBelow` (below the tile when collapsed; the
+    /// toolbar's far end, opposite the handle, when open), `gap` points away. If that
+    /// side has no room inside `visible`, it goes on the other side; if neither fits, it's
+    /// clamped into `visible`.
+    public static func editPillFrame(anchor: CGRect, x: CGFloat, size: CGSize, gap: CGFloat = 6,
+                                     preferBelow: Bool, in visible: CGRect) -> CGRect {
+        let below = anchor.minY - gap - size.height
+        let above = anchor.maxY + gap
+        let belowFits = below >= visible.minY
+        let aboveFits = above + size.height <= visible.maxY
+        let y: CGFloat
+        if preferBelow {
+            y = belowFits ? below : (aboveFits ? above : clampY(below, height: size.height, in: visible))
+        } else {
+            y = aboveFits ? above : (belowFits ? below : clampY(above, height: size.height, in: visible))
+        }
+        return CGRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
     /// True once a press has moved far enough to count as a drag.
     public static func isDrag(from a: CGPoint, to b: CGPoint, threshold: CGFloat = 4) -> Bool {
         let dx = b.x - a.x, dy = b.y - a.y

@@ -32,8 +32,8 @@ final class DockController {
     private var lastMode: Mode?
 
     private(set) var isExpanded = false
-    private var undoButton: DockButton!
-    private var clearButton: DockButton!
+    /// Floating Undo / Clear, shown only while there's ink (collapsed or open).
+    private let editPill = EditPill()
     private var hovering = false
     private var draggingTile = false
     /// Keeps the tile fully out right after collapsing (until the mouse moves away).
@@ -127,6 +127,8 @@ final class DockController {
         pencil.onHover = { [weak self] inside in self?.hoverChanged(inside) }
 
         buildToolbar()
+        editPill.onUndo = { [weak self] in self?.controller.undo() }
+        editPill.onClear = { [weak self] in self?.controller.clear() }
         flyout.companion = panel
         flyout.onPick = { [weak self] color in
             self?.controller.setColor(color)
@@ -186,9 +188,6 @@ final class DockController {
             }
             return b
         }
-        undoButton = action("arrow.uturn.backward", Shortcuts.hint("Undo")) { [weak self] in self?.controller.undo() }
-        clearButton = action("trash", Shortcuts.hint("Clear all")) { [weak self] in self?.controller.clear() }
-        sections.append(DockGroup([undoButton, clearButton]))
         sections.append(DockGroup([
             action("camera.viewfinder", Shortcuts.hint("Snapshot screen", .snapshot)) { [weak self] in
                 self?.controller.snapshot(.screenUnderMouse)
@@ -295,10 +294,7 @@ final class DockController {
     }
 
     func refresh() {
-        // Undo/Clear read as available only while there's ink on screen; dimmed otherwise.
-        let edits: NSColor? = controller.store.hasPersistentInk ? .white : NSColor.white.withAlphaComponent(0.3)
-        undoButton.contentTint = edits
-        clearButton.contentTint = edits
+        updateEditPill(duration: 0.18)
         pencil.ringColor = controller.mode.isDrawing ? nsColor(controller.color) : nil
         pencil.setArtAngle(artAngle(expanded: isExpanded),
                            animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
@@ -353,6 +349,7 @@ final class DockController {
             direction = layout.direction
             expandedTarget = layout.frame
             layoutSections()
+            updateEditPill(duration: Self.duration)
             // 2. Grow the (transparent) panel instantly to cover both states,
             //    keeping everything visually where it is.
             setPanelFrame(expandedTarget.union(collapsedFrame()))
@@ -372,6 +369,7 @@ final class DockController {
             holdOut = true
             tileIsOut = true
             panel.hasShadow = false
+            updateEditPill(duration: Self.duration)
             setPanelFrame(expandedTarget.union(collapsedFrame()))
             applyLayout(expanded: true, duration: 0)
             applyLayout(expanded: false, duration: Self.duration) { [weak self] in
@@ -533,6 +531,35 @@ final class DockController {
         }
         applyLayout(expanded: isExpanded, duration: 0)
         if isExpanded { panel.invalidateShadow() }
+        updateEditPill(duration: 0)
+    }
+
+    // MARK: Undo / Clear pill
+
+    /// Shows the pill while there's persistent ink, placed past the dock's far end (below
+    /// the tile when collapsed; opposite the handle when open), and moves it with the dock.
+    private func updateEditPill(duration: CFTimeInterval) {
+        guard controller.store.hasPersistentInk else {
+            editPill.hide(duration: duration == 0 ? 0 : 0.18)
+            return
+        }
+        let s = screen
+        let anchor: NSRect
+        let preferBelow: Bool
+        if isExpanded {
+            anchor = NSRect(x: expandedTarget.minX, y: expandedTarget.minY,
+                            width: Self.expandedWidth, height: expandedTarget.height)
+            preferBelow = direction == .down
+        } else {
+            // The tile's fully-out rect: the pill doesn't peek.
+            let c = collapsedFrame()
+            anchor = NSRect(x: c.minX, y: c.midY - Self.tileSize.height / 2,
+                            width: Self.tileSize.width, height: Self.tileSize.height)
+            preferBelow = true
+        }
+        let frame = DockGeometry.editPillFrame(anchor: anchor, x: s.frame.minX, size: EditPill.size,
+                                               preferBelow: preferBelow, in: s.visibleFrame)
+        editPill.show(at: frame, duration: duration)
     }
 
     /// Mouse Y and dock offset when the current drag started (or last changed screen).
@@ -1305,5 +1332,102 @@ final class PillBorder: NSView {
         NSColor.white.withAlphaComponent(0.16).setStroke()
         path.lineWidth = 1
         path.stroke()
+    }
+}
+
+// MARK: - Undo / Clear pill
+
+/// A small floating pill on the screen edge with Undo and Clear, shown only while there's
+/// ink. Same dark look as the toolbar: square and borderless on the edge side, rounded
+/// outer corners, window shadow that follows the shape. Its own non-activating panel at
+/// the dock's level (above the ink, and left out of captures as a Pencil window).
+@MainActor
+final class EditPill {
+    static let size = NSSize(width: 36, height: 66)
+
+    var onUndo: (() -> Void)?
+    var onClear: (() -> Void)?
+
+    private let panel: DockPanel
+    private var isShown = false
+    private var generation = 0
+    /// How far it slides out of the edge when appearing.
+    private static let slide: CGFloat = 10
+
+    init() {
+        let size = Self.size
+        panel = DockPanel(contentRect: NSRect(origin: .zero, size: size))
+        panel.hasShadow = true
+
+        let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+        effect.material = .hudWindow
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.appearance = NSAppearance(named: .vibrantDark)
+        effect.maskImage = Self.edgeMask(radius: 9)
+        effect.autoresizingMask = [.width, .height]
+        panel.contentView = effect
+
+        let undo = DockButton(symbol: "arrow.uturn.backward", hint: "Undo · Z")
+        let clear = DockButton(symbol: "trash", hint: "Clear all · X")
+        undo.onClick = { [weak self] in self?.onUndo?() }
+        clear.onClick = { [weak self] in self?.onClear?() }
+        undo.frame.origin = NSPoint(x: (size.width - undo.frame.width) / 2, y: size.height - 1 - undo.frame.height)
+        clear.frame.origin = NSPoint(x: (size.width - clear.frame.width) / 2, y: 1)
+        effect.addSubview(undo)
+        effect.addSubview(clear)
+    }
+
+    /// Shows (fade + slide out of the edge) or moves it to `frame`.
+    func show(at frame: NSRect, duration: CFTimeInterval) {
+        generation += 1
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if !isShown {
+            isShown = true
+            panel.setFrame(reduce ? frame : frame.offsetBy(dx: -Self.slide, dy: 0), display: false)
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+        }
+        let d = duration == 0 ? 0 : max(duration, 0.18)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = d
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(frame, display: true)
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    func hide(duration: CFTimeInterval) {
+        guard isShown else { return }
+        isShown = false
+        generation += 1
+        let gen = generation
+        HintCenter.shared.hide()
+        let f = panel.frame
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = duration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            if !reduce { panel.animator().setFrame(f.offsetBy(dx: -Self.slide, dy: 0), display: true) }
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.generation == gen else { return }
+                self.panel.orderOut(nil)
+            }
+        })
+    }
+
+    /// Square on the edge (left) side, rounded on the right.
+    private static func edgeMask(radius r: CGFloat) -> NSImage {
+        let size = NSSize(width: r * 2 + 1, height: r * 2 + 1)
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(cgPath: morphPath(rect, left: 0, right: r)).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+        image.resizingMode = .stretch
+        return image
     }
 }

@@ -62,12 +62,15 @@ with a small fallback item in the menu bar.
   - **Draw:** Pen, Highlighter, Laser, and the ink-color chip. Click the chip and a pill with the five colors slides out to the right. Picking one sets it and closes the pill. Clicking
     the chip again, clicking anywhere else, pressing Esc while drawing, or picking a mode
     also closes it. The active tool's icon takes the ink color.
-  - **Edit:** Undo, Clear
   - **Capture:** Snapshot (whole screen), Capture region, Capture drawing, Screen recording
   - **Clipboard:** opens the clipboard history sidebar (⌃⌘V)
   - **Off** at the end
-- The toolbar stays open while you draw, so you can switch color or undo mid-drawing.
+- The toolbar stays open while you draw, so you can switch color mid-drawing.
   Click the pencil handle at the top to collapse it. Off turns drawing off and collapses it.
+- **Undo / Clear** live in a small separate pill on the same edge that appears only while
+  there's ink on screen, whether the dock is collapsed or open. It sits just below the
+  pencil (or past the far end of the open toolbar), and on the other side when there's no
+  room. It fades away when the ink is cleared. While drawing, **Z** and **X** do the same.
 - **Drag the tab** (or the handle) up or down to move it. It stays locked to the left
   edge. Drag onto another display to move it there. The position is remembered.
 - Hover any button for a moment to see its name and its global shortcut, if it has one.
