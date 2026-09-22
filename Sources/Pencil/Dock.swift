@@ -32,6 +32,8 @@ final class DockController {
     private var lastMode: Mode?
 
     private(set) var isExpanded = false
+    private var undoButton: DockButton!
+    private var clearButton: DockButton!
     private var hovering = false
     private var draggingTile = false
     /// Keeps the tile fully out right after collapsing (until the mouse moves away).
@@ -184,10 +186,9 @@ final class DockController {
             }
             return b
         }
-        sections.append(DockGroup([
-            action("arrow.uturn.backward", Shortcuts.hint("Undo")) { [weak self] in self?.controller.undo() },
-            action("trash", Shortcuts.hint("Clear all")) { [weak self] in self?.controller.clear() },
-        ]))
+        undoButton = action("arrow.uturn.backward", Shortcuts.hint("Undo")) { [weak self] in self?.controller.undo() }
+        clearButton = action("trash", Shortcuts.hint("Clear all")) { [weak self] in self?.controller.clear() }
+        sections.append(DockGroup([undoButton, clearButton]))
         sections.append(DockGroup([
             action("camera.viewfinder", Shortcuts.hint("Snapshot screen", .snapshot)) { [weak self] in
                 self?.controller.snapshot(.screenUnderMouse)
@@ -294,6 +295,10 @@ final class DockController {
     }
 
     func refresh() {
+        // Undo/Clear read as available only while there's ink on screen; dimmed otherwise.
+        let edits: NSColor? = controller.store.hasPersistentInk ? .white : NSColor.white.withAlphaComponent(0.3)
+        undoButton.contentTint = edits
+        clearButton.contentTint = edits
         pencil.ringColor = controller.mode.isDrawing ? nsColor(controller.color) : nil
         pencil.setArtAngle(artAngle(expanded: isExpanded),
                            animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
