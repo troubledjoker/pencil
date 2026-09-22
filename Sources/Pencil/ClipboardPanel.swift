@@ -207,13 +207,14 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         confirming = false
         setConfirming(false)
 
-        // Full height of the visible frame, flush with its right edge (left of a right-side Dock).
-        // On notched displays visibleFrame reserves a few points more than the menu bar itself
-        // (38 vs 32), leaving a sliver of wallpaper; run up to the menu bar's real bottom instead.
+        // Flush with the visible frame's right edge (left of a right-side Dock), running from its
+        // bottom all the way to the top of the screen: the window sits just below the menu bar's
+        // level, so the (often translucent) menu bar draws over the dark sidebar instead of over
+        // wallpaper. Content starts below the menu bar via `topInset`.
         let v = screen.visibleFrame
-        let menuBarBottom = screen.safeAreaInsets.top > 0 ? screen.frame.maxY - screen.safeAreaInsets.top : v.maxY
         let w = Self.width
-        let h = max(v.maxY, menuBarBottom) - v.minY
+        let h = screen.frame.maxY - v.minY
+        topInset = screen.frame.maxY - v.maxY
         let target = NSRect(x: v.maxX - w, y: v.minY, width: w, height: h)
         openFrame = target
         // One sheet: the WINDOW slides and fades as a whole; nothing inside animates on its own.
@@ -519,13 +520,16 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
 
     // MARK: Layout
 
+    /// Height of the menu-bar strip the window extends under; content is laid out below it.
+    private var topInset: CGFloat = 0
+
     private func layoutContent() {
         let w = Self.width
         let h = window.frame.height
         slider.setFrameSize(NSSize(width: w, height: h))
         background.frame = NSRect(x: 0, y: 0, width: w, height: h)
 
-        var top = h
+        var top = h - topInset
         titleLabel.frame = NSRect(x: 16, y: top - 28, width: w - 100, height: 18)
         closeButton.frame = NSRect(x: w - 38, y: top - 31, width: 26, height: 24)
         pauseButton.frame = NSRect(x: w - 66, y: top - 31, width: 26, height: 24)
@@ -945,9 +949,10 @@ final class ClipboardPanelWindow: NSPanel {
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: ClipboardPanelController.width, height: 400),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        // Above the dock and the ink overlay, below the hover hints. Transparent so the
-        // content can slide in from the edge; the sidebar itself is solid.
-        level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2)
+        // Just below the menu bar, so the menu bar draws over the sidebar's top strip. That is
+        // below the ink overlay too, which only matters while a drawing mode is on.
+        // Transparent so the content can slide in from the edge; the sidebar itself is solid.
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         isFloatingPanel = true
         hidesOnDeactivate = false
