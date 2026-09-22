@@ -42,7 +42,7 @@ final class DockController {
     /// How much of the tile hides past the screen edge at rest.
     private static let peekHidden: CGFloat = 18
     private static let peekDuration: CFTimeInterval = 0.18
-    private static let restDelay: TimeInterval = 0.4
+    private static let restDelay: TimeInterval = 0
     /// Bumped on every transition so a stale completion never undoes a newer one.
     private var generation = 0
     /// Which way the open toolbar extends from the handle.
@@ -708,10 +708,10 @@ final class DockPencilView: DragSurface {
         for l in [holder, tile, shape, darkBorder, lightBorder, ring, art] { l.contentsScale = scale }
     }
 
-    /// Pencil angles (radians, positive = counterclockwise). Upright at rest, a touch of
-    /// tilt when hovered, tipped over to the icon's diagonal as the toolbar opens.
+    /// Pencil angles (radians, positive = counterclockwise). Upright at rest, tipped to the
+    /// icon's diagonal when hovered and while the toolbar is open.
     static let uprightAngle: CGFloat = 0
-    static let hoverAngle: CGFloat = -18 * .pi / 180
+    static let hoverAngle: CGFloat = openAngle
     static let openAngle: CGFloat = -45 * .pi / 180
     private var artAngle: CGFloat = 0
 
