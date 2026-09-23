@@ -164,6 +164,8 @@ final class DockController {
 
         let tools: [(Tool, String, String)] = [
             (.pen, "pencil.tip", Shortcuts.hint("Pen", .pen)),
+            (.eraser, "eraser", Shortcuts.hint("Eraser", .eraser)),
+            (.objectEraser, "eraser.line.dashed", Shortcuts.hint("Object eraser", .objectEraser)),
             (.highlighter, "highlighter", Shortcuts.hint("Highlighter", .highlighter)),
             (.laser, "wand.and.rays", Shortcuts.hint("Laser", .laser)),
         ]
@@ -319,8 +321,8 @@ final class DockController {
         for (tool, b) in toolButtons {
             let active = controller.mode.tool == tool
             b.isSelected = active
-            // The active tool's icon takes the ink color.
-            b.contentTint = active ? nsColor(controller.color) : nil
+            // The active tool's icon takes the ink color (the erasers have none).
+            b.contentTint = active && !tool.isEraser ? nsColor(controller.color) : nil
         }
         swatch.color = controller.color
         swatch.isOpen = flyout.isOpen
@@ -578,12 +580,13 @@ final class DockController {
         let frame = DockGeometry.editPillFrame(anchor: anchor, x: s.frame.minX, size: size,
                                                preferBelow: preferBelow, in: s.visibleFrame)
         if let drawingTool {
+            // The erasers preview their size in white: they have no ink color.
             editPill.configure(size: .init(level: controller.strokeSize.level, tool: drawingTool,
-                                           color: controller.color,
+                                           color: drawingTool.isEraser ? .white : controller.color,
                                            onTop: DockGeometry.sizeSectionOnTop(pill: frame, in: s.visibleFrame)),
-                               hasInk: hasInk)
+                               hasInk: hasInk, canUndo: controller.store.canUndo)
         } else {
-            editPill.configure(size: nil, hasInk: hasInk)
+            editPill.configure(size: nil, hasInk: hasInk, canUndo: controller.store.canUndo)
         }
         editPill.show(at: frame, duration: duration)
     }
@@ -1809,16 +1812,16 @@ final class EditPill {
         }
         slider.onPressEnd = { [weak self] in self?.scheduleClose() }
         for v in [undo, clear, dot, divider] as [NSView] { effect.addSubview(v) }
-        configure(size: nil, hasInk: true)
+        configure(size: nil, hasInk: true, canUndo: true)
     }
 
     /// Lays out the controls for the next frame: with the size section (`size` non-nil)
-    /// or Undo / Clear only. Undo / Clear dim when there's no ink to act on.
-    func configure(size: SizeState?, hasInk: Bool) {
+    /// or Undo / Clear only. Clear dims when there's no ink, Undo when there's nothing to undo.
+    func configure(size: SizeState?, hasInk: Bool, canUndo: Bool) {
         let w = DockGeometry.editPillWidth
         let showSize = size != nil
         for v in [dot, divider] as [NSView] { v.isHidden = !showSize }
-        undo.alphaValue = hasInk ? 1 : 0.35
+        undo.alphaValue = canUndo ? 1 : 0.35
         clear.alphaValue = hasInk ? 1 : 0.35
         func center(_ v: NSView, y: CGFloat, height: CGFloat) {
             v.frame = NSRect(x: (w - v.frame.width) / 2, y: y, width: v.frame.width, height: height)

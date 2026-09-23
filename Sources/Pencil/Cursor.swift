@@ -1,4 +1,5 @@
 import AppKit
+import PencilCore
 
 /// A view that wants a specific cursor while the mouse is over it (buttons, rows, the tile).
 protocol PointerCursorProviding: NSView {
@@ -112,7 +113,7 @@ enum PencilCursor {
             below = number
             guard window.isVisible, !window.ignoresMouseEvents, window.alphaValue > 0.01 else { continue }
             if let overlay = window as? OverlayWindow {
-                if overlay.overlayView.isDrawing { return .crosshair }
+                if let cursor = overlay.overlayView.drawingCursor { return cursor }
                 continue
             }
             guard let content = window.contentView else { continue }
@@ -145,4 +146,39 @@ final class PanelCursorTracker: NSResponder {
     override func mouseMoved(with event: NSEvent) { PencilCursor.update() }
     override func mouseExited(with event: NSEvent) { PencilCursor.update() }
     override func cursorUpdate(with event: NSEvent) { PencilCursor.update() }
+}
+
+/// Circle cursors for the erasers, the size of what they erase.
+@MainActor
+enum EraserCursor {
+    private static var cache: [String: NSCursor] = [:]
+
+    static func cursor(for tool: Tool, width: CGFloat) -> NSCursor {
+        let d = min(max(width, 8), 128).rounded()
+        let key = "\(tool.rawValue)-\(d)"
+        if let c = cache[key] { return c }
+        let side = d + 4
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2))
+            NSColor.white.withAlphaComponent(tool == .eraser ? 0.25 : 0).setFill()
+            circle.fill()
+            // A dark ring under a light one, so it shows on any background.
+            circle.lineWidth = 2.5
+            NSColor.black.withAlphaComponent(0.55).setStroke()
+            circle.stroke()
+            circle.lineWidth = 1.25
+            if tool == .objectEraser { circle.setLineDash([3, 2.5], count: 2, phase: 0) }
+            NSColor.white.setStroke()
+            circle.stroke()
+            if tool == .objectEraser {
+                let dot = NSBezierPath(ovalIn: NSRect(x: rect.midX - 1.5, y: rect.midY - 1.5, width: 3, height: 3))
+                NSColor.white.setFill()
+                dot.fill()
+            }
+            return true
+        }
+        let cursor = NSCursor(image: image, hotSpot: NSPoint(x: side / 2, y: side / 2))
+        cache[key] = cursor
+        return cursor
+    }
 }

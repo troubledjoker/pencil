@@ -117,6 +117,8 @@ Every global key works from any app, even with the toolbar collapsed.
 | --- | --- |
 | **⌥1** | Laser (press again to turn off) |
 | **⌥2** | Pen (press again to turn off) |
+| **⌥8** | Eraser: rub out part of a stroke |
+| **⇧⌥8** | Object eraser: remove whole strokes |
 | **⌥7** | Highlighter (press again to turn off) |
 | **⌥0** | Off: stop drawing and hide the ink |
 | **⌥]** / **⌥[** | Bigger / smaller stroke |
@@ -148,6 +150,7 @@ Every global key works from any app, even with the toolbar collapsed.
 | Key | Action |
 | --- | --- |
 | **P** / **H** / **L** | Pen / Highlighter / Laser |
+| **E** / **O** | Eraser / Object eraser |
 | **1–5** | Red, yellow, green, blue, white |
 | **Z** or **⌘Z** | Undo |
 | **X** | Clear all |
@@ -171,12 +174,18 @@ Every global key works from any app, even with the toolbar collapsed.
 | **Pen** | Solid strokes that stay until cleared |
 | **Highlighter** | Thick, see-through strokes that stay until cleared |
 | **Laser** | Glowing stroke that fades after about 2.5s |
+| **Eraser** | Rubs out the ink under the circle, splitting a stroke if you cut through it |
+| **Object eraser** | Removes any stroke the circle touches, all of it |
 | **Pass-through** | Ink stays visible, clicks go to your apps (press **Esc** while drawing) |
 | **Off** | Ink hidden, clicks go to your apps. The ink comes back when you draw again |
 
 - **Colors:** keys **1–5**, or the color chip in the toolbar.
 - **Stroke size:** 7 sizes shared by every tool and remembered. Use **⌥]** / **⌥[**, the
   **+ / −** in the floating pill, or scroll over the size dot. Ink you already drew keeps its width.
+  The size also sets how big the erasers are; the cursor is a circle that size.
+- **Erasers:** in the toolbar right under the pen. One drag is one undo step, so **Z** brings
+  back everything that drag erased.
+- **Undo** steps back through strokes, erases and Clear alike.
 - **Undo / Clear:** a small pill shows up next to the pencil whenever there's ink on screen.
 - Starting a mode with ⌥1 or ⌥2 takes the keyboard right away. **Esc** hands it back to your app.
 

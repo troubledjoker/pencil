@@ -47,6 +47,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             it.target = self
             menu.addItem(it)
         }
+        addOptionItem("Eraser", "8", #selector(toggleEraser))
+        let objectEraser = NSMenuItem(title: "Object eraser", action: #selector(toggleObjectEraser), keyEquivalent: "8")
+        objectEraser.keyEquivalentModifierMask = [.option, .shift]
+        objectEraser.target = self
+        menu.addItem(objectEraser)
         addOptionItem("Highlighter", "7", #selector(toggleHighlighter))
         addOptionItem("Off (hide ink)", "0", #selector(turnOff))
         addOptionItem("Undo", "z", #selector(undo))
@@ -130,6 +135,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case .draw(.pen): symbol = "pencil.circle.fill"
         case .draw(.highlighter): symbol = "highlighter"
         case .draw(.laser): symbol = "wand.and.rays"
+        case .draw(.eraser): symbol = "eraser"
+        case .draw(.objectEraser): symbol = "eraser.line.dashed"
         }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Pencil")
             ?? NSImage(systemSymbolName: "pencil", accessibilityDescription: "Pencil")
@@ -191,6 +198,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func toggleLaser() { controller.toggleTool(.laser) }
     @objc private func togglePen() { controller.toggleTool(.pen) }
+    @objc private func toggleEraser() { controller.toggleTool(.eraser) }
+    @objc private func toggleObjectEraser() { controller.toggleTool(.objectEraser) }
 
     @objc private func showShortcuts() {
         DispatchQueue.main.async { [controller] in

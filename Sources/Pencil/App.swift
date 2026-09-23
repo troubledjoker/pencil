@@ -64,6 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .laser: return { c.toggleTool(.laser) }
             case .pen: return { c.toggleTool(.pen) }
             case .highlighter: return { c.toggleTool(.highlighter) }
+            case .eraser: return { c.toggleTool(.eraser) }
+            case .objectEraser: return { c.toggleTool(.objectEraser) }
             case .off: return {
                 // Like the toolbar's Off: stop drawing, hide the ink, collapse.
                 c.setMode(.off)

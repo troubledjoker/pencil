@@ -18,7 +18,7 @@ final class ShortcutTests: XCTestCase {
 
     func testGlobalDigits() {
         XCTAssertEqual(Shortcuts.Global.allCases.map(\.label),
-                       ["⌥1", "⌥2", "⌥7", "⌥0", "⌥]", "⌥[", "⌥Z", "⌥X", "⌥3", "⌥4", "⇧⌥4", "⌥6", "⌥5",
+                       ["⌥1", "⌥2", "⌥8", "⇧⌥8", "⌥7", "⌥0", "⌥]", "⌥[", "⌥Z", "⌥X", "⌥3", "⌥4", "⇧⌥4", "⌥6", "⌥5",
                         "⌃⌘V", "⌥⇧V", "⌥9", "⌥/", "⌥Q"])
         XCTAssertEqual(Shortcuts.Global.burst.keyCode, Shortcuts.Global.region.keyCode)
         XCTAssertEqual(Shortcuts.Global.pasteAll.modifiers, Shortcuts.Mods.option | Shortcuts.Mods.shift)
@@ -33,6 +33,8 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(cmd("p"), .tool(.pen))
         XCTAssertEqual(cmd("h"), .tool(.highlighter))
         XCTAssertEqual(cmd("L"), .tool(.laser), "caps lock / shift still works")
+        XCTAssertEqual(cmd("e"), .tool(.eraser))
+        XCTAssertEqual(cmd("o"), .tool(.objectEraser))
         XCTAssertEqual(cmd("3"), .color(index: 2))
         XCTAssertNil(cmd("6"))
         XCTAssertEqual(cmd("z"), .undo)
@@ -90,7 +92,7 @@ final class ShortcutTests: XCTestCase {
     /// (exhaustive switch); reusing one fails here.
     func testEveryFeatureHasItsOwnGlobalKey() {
         let expected: [Shortcuts.Feature: String] = [
-            .laser: "⌥1", .pen: "⌥2", .highlighter: "⌥7", .off: "⌥0", .bigger: "⌥]", .smaller: "⌥[",
+            .laser: "⌥1", .pen: "⌥2", .eraser: "⌥8", .objectEraser: "⇧⌥8", .highlighter: "⌥7", .off: "⌥0", .bigger: "⌥]", .smaller: "⌥[",
             .undo: "⌥Z", .clear: "⌥X",
             .snapshot: "⌥3", .region: "⌥4", .burst: "⇧⌥4", .captureDrawing: "⌥6", .record: "⌥5",
             .clipboard: "⌃⌘V", .pasteAll: "⌥⇧V",
@@ -124,7 +126,8 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(Shortcuts.Global.bigger.keyCode, 30)  // kVK_ANSI_RightBracket
         XCTAssertEqual(Shortcuts.Global.smaller.keyCode, 33) // kVK_ANSI_LeftBracket
         XCTAssertEqual(Shortcuts.Global.bigger.modifiers, Shortcuts.Mods.option)
-        XCTAssertEqual(Shortcuts.globalSections.first?.keys, [.laser, .pen, .highlighter, .off, .bigger, .smaller])
+        XCTAssertEqual(Shortcuts.globalSections.first?.keys, [.laser, .pen, .eraser, .objectEraser, .highlighter, .off,
+                                                                 .bigger, .smaller])
         XCTAssertTrue(Shortcuts.drawingRows.contains { $0.0.contains("]") && $0.0.contains("[") })
     }
 

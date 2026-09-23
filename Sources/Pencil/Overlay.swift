@@ -78,7 +78,12 @@ final class OverlayView: NSView {
 
     // MARK: Cursor
 
-    var isDrawing: Bool { controller?.mode.isDrawing == true }
+    /// Crosshair for the ink tools, a circle the eraser's size for the erasers; nil when not drawing.
+    var drawingCursor: NSCursor? {
+        guard let controller, let tool = controller.mode.tool else { return nil }
+        guard tool.isEraser else { return .crosshair }
+        return EraserCursor.cursor(for: tool, width: controller.strokeSize.width(for: tool))
+    }
 
     // No cursor rects: the overlay is key while drawing, and its rects would keep the
     // crosshair over Pencil's own panels above it. `PencilCursor` checks what is really
@@ -97,7 +102,7 @@ final class OverlayView: NSView {
     override func mouseMoved(with event: NSEvent) { PencilCursor.update() }
 
     private func updateCursor() {
-        if isDrawing { NSCursor.crosshair.set() }
+        drawingCursor?.set()
     }
 
     // MARK: Mouse

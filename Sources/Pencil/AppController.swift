@@ -119,6 +119,7 @@ final class AppController {
     // MARK: Mode & color
 
     func setMode(_ newMode: Mode) {
+        store.endErase()
         invalidate(store.end())
         if let tool = newMode.tool { lastDrawingTool = tool }
         mode = newMode
@@ -147,12 +148,17 @@ final class AppController {
         if announce {
             toast.show("Size \(strokeSize.level)", on: Snapshotter.screenUnderMouse(), duration: 0.9)
         }
-        if changed { onStateChange?() }
+        if changed { sizeChanged() }
     }
 
     /// Sets the stroke size level directly (the pill's size slider).
     func setSizeLevel(_ level: Int) {
-        if strokeSize.set(level) { onStateChange?() }
+        if strokeSize.set(level) { sizeChanged() }
+    }
+
+    private func sizeChanged() {
+        onStateChange?()
+        if mode.tool?.isEraser == true { PencilCursor.update() } // the circle cursor is the eraser's size
     }
 
     func undo() {
@@ -169,17 +175,30 @@ final class AppController {
 
     func pointerDown(at p: CGPoint) {
         guard let tool = mode.tool else { return }
+        if tool.isEraser {
+            invalidate(store.beginErase(tool: tool, radius: strokeSize.width(for: tool) / 2, at: p))
+            onStateChange?()
+            return
+        }
         invalidate(store.begin(tool: tool, color: color, width: strokeSize.width(for: tool), at: p, time: CACurrentMediaTime()))
         if tool == .laser { startFadeTimer() }
     }
 
     func pointerDragged(to p: CGPoint) {
+        if store.isErasing {
+            if let dirty = store.extendErase(to: p) {
+                invalidate(dirty)
+                onStateChange?() // the last stroke can go, and the pill with it
+            }
+            return
+        }
         invalidate(store.extend(to: p, time: CACurrentMediaTime()))
         // The in-progress laser stroke can fully fade while the mouse is held still.
         if mode.tool == .laser { startFadeTimer() }
     }
 
     func pointerUp() {
+        store.endErase()
         invalidate(store.end())
         onStateChange?()
     }

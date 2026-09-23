@@ -11,6 +11,8 @@ enum InkRenderer {
                 drawSolid(stroke, in: ctx)
             case .laser:
                 drawLaser(stroke, store: store, in: ctx, now: now)
+            case .eraser, .objectEraser:
+                break // erasers never leave strokes
             }
         }
     }

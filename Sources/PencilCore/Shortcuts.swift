@@ -19,7 +19,7 @@ public enum Shortcuts {
     /// no two share a combo and every `Feature` has one.
     public enum Global: CaseIterable, Sendable {
         // Draw
-        case laser, pen, highlighter, off, bigger, smaller
+        case laser, pen, eraser, objectEraser, highlighter, off, bigger, smaller
         // Edit
         case undo, clear
         // Capture
@@ -39,6 +39,7 @@ public enum Shortcuts {
             case .record: return 23         // 5
             case .captureDrawing: return 22 // 6
             case .highlighter: return 26    // 7
+            case .eraser, .objectEraser: return 28 // 8
             case .toggleDock: return 25     // 9
             case .off: return 29            // 0
             case .bigger: return 30         // ]
@@ -54,7 +55,7 @@ public enum Shortcuts {
         /// NSEvent-style modifier mask (see `Mods`).
         public var modifiers: Int {
             switch self {
-            case .burst, .pasteAll: return Mods.option | Mods.shift
+            case .burst, .pasteAll, .objectEraser: return Mods.option | Mods.shift
             case .clipboard: return Mods.control | Mods.command
             default: return Mods.option
             }
@@ -69,6 +70,8 @@ public enum Shortcuts {
             case .record: return "⌥5"
             case .captureDrawing: return "⌥6"
             case .highlighter: return "⌥7"
+            case .eraser: return "⌥8"
+            case .objectEraser: return "⇧⌥8"
             case .toggleDock: return "⌥9"
             case .off: return "⌥0"
             case .bigger: return "⌥]"
@@ -88,6 +91,8 @@ public enum Shortcuts {
             case .laser: return "Laser (press again to turn off)"
             case .pen: return "Pen (press again to turn off)"
             case .highlighter: return "Highlighter (press again to turn off)"
+            case .eraser: return "Eraser: rub out part of a stroke"
+            case .objectEraser: return "Object eraser: remove whole strokes"
             case .off: return "Off: stop drawing and hide the ink"
             case .bigger: return "Bigger stroke (all tools)"
             case .smaller: return "Smaller stroke (all tools)"
@@ -111,7 +116,7 @@ public enum Shortcuts {
     /// global key (exhaustive switch), so a new feature can't ship without one. A feature
     /// that is just another way to do an existing one (see `aliases`) shares that key.
     public enum Feature: CaseIterable, Hashable, Sendable {
-        case laser, pen, highlighter, off, bigger, smaller, undo, clear, snapshot, region, burst,
+        case laser, pen, eraser, objectEraser, highlighter, off, bigger, smaller, undo, clear, snapshot, region, burst,
              captureDrawing, record, clipboard, pasteAll, toggleDock, shortcuts,
              /// The toolbar's Hide button: collapses the toolbar, the same as ⌥9.
              hide,
@@ -122,6 +127,8 @@ public enum Shortcuts {
             case .laser: return .laser
             case .pen: return .pen
             case .highlighter: return .highlighter
+            case .eraser: return .eraser
+            case .objectEraser: return .objectEraser
             case .off: return .off
             case .bigger: return .bigger
             case .smaller: return .smaller
@@ -147,7 +154,7 @@ public enum Shortcuts {
 
     /// The cheat sheet's global sections.
     public static let globalSections: [(title: String, keys: [Global])] = [
-        ("Draw", [.laser, .pen, .highlighter, .off, .bigger, .smaller]),
+        ("Draw", [.laser, .pen, .eraser, .objectEraser, .highlighter, .off, .bigger, .smaller]),
         ("Edit", [.undo, .clear]),
         ("Capture", [.snapshot, .region, .burst, .captureDrawing, .record]),
         ("Clipboard", [.clipboard, .pasteAll]),
@@ -227,6 +234,8 @@ public enum Shortcuts {
         case "p": return .tool(.pen)
         case "h": return .tool(.highlighter)
         case "l": return .tool(.laser)
+        case "e": return .tool(.eraser)
+        case "o": return .tool(.objectEraser)
         case "z": return .undo
         case "x": return .clear
         case "]": return .size(delta: 1)
@@ -253,6 +262,7 @@ public enum Shortcuts {
 
     public static let drawingRows: [(String, String)] = [
         ("P  H  L", "Pen · Highlighter · Laser"),
+        ("E  O", "Eraser · Object eraser"),
         ("1 – 5", "Red · Yellow · Green · Blue · White"),
         ("Z  or  ⌘Z", "Undo"),
         ("X", "Clear all"),

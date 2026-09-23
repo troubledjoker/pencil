@@ -1,11 +1,14 @@
 import CoreGraphics
 import Foundation
 
-/// A drawing tool. Pen and highlighter ink persists; laser ink fades.
+/// A drawing tool. Pen and highlighter ink persists; laser ink fades. The erasers
+/// leave no ink: the eraser cuts through strokes, the object eraser removes whole ones.
 public enum Tool: String, CaseIterable, Sendable {
-    case pen, highlighter, laser
+    case pen, highlighter, laser, eraser, objectEraser
 
     public var isPersistent: Bool { self != .laser }
+
+    public var isEraser: Bool { self == .eraser || self == .objectEraser }
 
     /// Width at the default size level (3). The stroke size scales it.
     public var baseLineWidth: CGFloat {
@@ -13,6 +16,8 @@ public enum Tool: String, CaseIterable, Sendable {
         case .pen: return 4
         case .highlighter: return 18
         case .laser: return 3
+        case .eraser: return 20
+        case .objectEraser: return 12
         }
     }
 
@@ -21,6 +26,7 @@ public enum Tool: String, CaseIterable, Sendable {
         case .pen: return 1
         case .highlighter: return 0.35
         case .laser: return 0.9
+        case .eraser, .objectEraser: return 0
         }
     }
 
@@ -43,6 +49,8 @@ public enum Tool: String, CaseIterable, Sendable {
         case .pen: return "Pen"
         case .highlighter: return "Highlighter"
         case .laser: return "Laser"
+        case .eraser: return "Eraser"
+        case .objectEraser: return "Object eraser"
         }
     }
 }
@@ -178,6 +186,12 @@ public struct Stroke: Identifiable, Sendable {
 
     public var renderPadding: CGFloat { tool.renderPadding(width: lineWidth) }
 
+    init(id: Int, tool: Tool, color: InkColor, lineWidth: CGFloat, points: [InkPoint]) {
+        self.init(id: id, tool: tool, color: color, lineWidth: lineWidth, first: points[0])
+        self.points = points
+        recomputeBounds()
+    }
+
     mutating func append(_ p: InkPoint) {
         points.append(p)
         pointBounds = pointBounds.union(CGRect(origin: p.location, size: .zero))
@@ -219,6 +233,11 @@ public final class InkStore {
     public private(set) var laserStrokes: [Stroke] = []   // finished laser strokes still fading
     public private(set) var current: Stroke?
     private var nextID = 1
+    /// `strokes` before each undoable change (a stroke added, an erase gesture), oldest first.
+    private var history: [[Stroke]] = []
+    /// The eraser gesture in progress, if any.
+    private var erasing: (tool: Tool, radius: CGFloat, last: CGPoint, recorded: Bool)?
+    private static let historyLimit = 200
 
     public init(laserLifetime: TimeInterval = InkStore.defaultLaserLifetime) {
         self.laserLifetime = laserLifetime
@@ -233,6 +252,9 @@ public final class InkStore {
     }
 
     public var hasPersistentInk: Bool { !strokes.isEmpty }
+
+    /// True when undo would change something (a stroke, an erase or a clear to revert).
+    public var canUndo: Bool { !history.isEmpty }
 
     /// True while any laser point still needs to fade.
     public var hasFadingInk: Bool {
@@ -275,6 +297,7 @@ public final class InkStore {
         current = nil
         if stroke.points.isEmpty { return nil }
         if stroke.tool.isPersistent {
+            record()
             strokes.append(stroke)
         } else {
             laserStrokes.append(stroke)
@@ -282,17 +305,100 @@ public final class InkStore {
         return stroke.renderBounds
     }
 
-    /// Removes the last persistent stroke.
+    /// Reverts the last stroke or erase.
     @discardableResult
     public func undo() -> CGRect? {
-        guard let removed = strokes.popLast() else { return nil }
-        return removed.renderBounds
+        endErase()
+        guard let previous = history.popLast() else { return nil }
+        let dirty = changedBounds(strokes, previous)
+        strokes = previous
+        return dirty
+    }
+
+    // MARK: Erasing
+
+    /// Starts an erase gesture with a circle of `radius`. `.eraser` cuts the ink under the
+    /// circle; `.objectEraser` removes every stroke the circle touches.
+    @discardableResult
+    public func beginErase(tool: Tool, radius: CGFloat, at location: CGPoint) -> CGRect? {
+        let dirty = end()
+        endErase()
+        erasing = (tool, max(radius, 1), location, false)
+        return union(dirty, erase(from: location, to: location) ?? .null)
+    }
+
+    /// Erases along the path from the last eraser point to `location`.
+    @discardableResult
+    public func extendErase(to location: CGPoint) -> CGRect? {
+        guard let e = erasing else { return nil }
+        erasing?.last = location
+        return erase(from: e.last, to: location)
+    }
+
+    /// Ends the erase gesture. One gesture is one undo step.
+    public func endErase() { erasing = nil }
+
+    public var isErasing: Bool { erasing != nil }
+
+    private func erase(from a: CGPoint, to b: CGPoint) -> CGRect? {
+        guard let e = erasing else { return nil }
+        let sweep = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+            .insetBy(dx: -e.radius, dy: -e.radius)
+        var result: [Stroke] = []
+        var dirty: CGRect?
+        for stroke in strokes {
+            let reach = e.radius + stroke.lineWidth / 2
+            guard stroke.renderBounds.intersects(sweep) else { result.append(stroke); continue }
+            if e.tool == .objectEraser {
+                if EraserGeometry.touches(stroke.points.map(\.location), from: a, to: b, within: reach) {
+                    dirty = union(dirty, stroke.renderBounds)
+                } else {
+                    result.append(stroke)
+                }
+                continue
+            }
+            guard let pieces = EraserGeometry.cut(stroke.points, from: a, to: b, within: reach) else {
+                result.append(stroke)
+                continue
+            }
+            dirty = union(dirty, stroke.renderBounds)
+            for piece in pieces {
+                result.append(Stroke(id: nextID, tool: stroke.tool, color: stroke.color,
+                                     lineWidth: stroke.lineWidth, points: piece))
+                nextID += 1
+            }
+        }
+        guard dirty != nil else { return nil }
+        if erasing?.recorded == false {
+            record()
+            erasing?.recorded = true
+        }
+        strokes = result
+        return dirty
+    }
+
+    private func record() {
+        history.append(strokes)
+        if history.count > Self.historyLimit { history.removeFirst() }
+    }
+
+    /// Area covered by strokes in one list and not the other (strokes never change in
+    /// place: an edit replaces them with new ids).
+    private func changedBounds(_ a: [Stroke], _ b: [Stroke]) -> CGRect? {
+        let aIDs = Set(a.map(\.id)), bIDs = Set(b.map(\.id))
+        var dirty: CGRect?
+        for s in a where !bIDs.contains(s.id) { dirty = union(dirty, s.renderBounds) }
+        for s in b where !aIDs.contains(s.id) { dirty = union(dirty, s.renderBounds) }
+        return dirty
     }
 
     /// Removes all ink, including fading laser ink and any stroke in progress.
+    /// Undo brings the persistent ink back (laser ink is gone for good).
     @discardableResult
     public func clear() -> CGRect? {
+        endErase()
         let dirty = visibleStrokes.reduce(nil as CGRect?) { union($0, $1.renderBounds) }
+        if !strokes.isEmpty { record() }
         strokes.removeAll()
         laserStrokes.removeAll()
         current = nil
@@ -325,9 +431,92 @@ public final class InkStore {
         return dirty
     }
 
+    private func union(_ a: CGRect?, _ b: CGRect?) -> CGRect? {
+        guard let b else { return a }
+        return union(a, b)
+    }
+
     private func union(_ a: CGRect?, _ b: CGRect) -> CGRect? {
         guard !b.isNull else { return a }
         guard let a, !a.isNull else { return b }
         return a.union(b)
+    }
+}
+
+/// The geometry behind the erasers: the eraser is a circle swept along a segment (a capsule).
+public enum EraserGeometry {
+    /// Distance from `p` to the segment a–b.
+    public static func distance(_ p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        var t: CGFloat = 0
+        if len2 > 0 { t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) }
+        let x = a.x + t * dx - p.x, y = a.y + t * dy - p.y
+        return (x * x + y * y).squareRoot()
+    }
+
+    /// Shortest distance between segments p–q and a–b.
+    public static func distance(segment p: CGPoint, _ q: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+        if segmentsCross(p, q, a, b) { return 0 }
+        return min(distance(p, toSegment: a, b), distance(q, toSegment: a, b),
+                   distance(a, toSegment: p, q), distance(b, toSegment: p, q))
+    }
+
+    private static func segmentsCross(_ p: CGPoint, _ q: CGPoint, _ a: CGPoint, _ b: CGPoint) -> Bool {
+        func cross(_ o: CGPoint, _ u: CGPoint, _ v: CGPoint) -> CGFloat {
+            (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x)
+        }
+        let d1 = cross(a, b, p), d2 = cross(a, b, q), d3 = cross(p, q, a), d4 = cross(p, q, b)
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+    }
+
+    /// True if the polyline comes within `reach` of the eraser's sweep a–b.
+    public static func touches(_ points: [CGPoint], from a: CGPoint, to b: CGPoint, within reach: CGFloat) -> Bool {
+        guard let first = points.first else { return false }
+        if points.count == 1 { return distance(first, toSegment: a, b) <= reach }
+        for i in 1..<points.count where distance(segment: points[i - 1], points[i], toSegment: a, b) <= reach {
+            return true
+        }
+        return false
+    }
+
+    /// Cuts the part of a stroke within `reach` of the sweep a–b. Returns the pieces left
+    /// (runs of two or more points, or a lone dot that was a dot to begin with), or nil
+    /// if the sweep missed the stroke. Long segments are subdivided first so the cut
+    /// lands where the eraser is, not at the nearest recorded point.
+    public static func cut(_ points: [InkPoint], from a: CGPoint, to b: CGPoint,
+                           within reach: CGFloat) -> [[InkPoint]]? {
+        guard !points.isEmpty else { return nil }
+        let step = max(reach / 2, 0.5)
+        var dense: [InkPoint] = [points[0]]
+        for i in points.indices.dropFirst() {
+            let p = points[i - 1], q = points[i]
+            let dx = q.location.x - p.location.x, dy = q.location.y - p.location.y
+            let len = (dx * dx + dy * dy).squareRoot()
+            // Only near the eraser: elsewhere the stroke keeps its points untouched.
+            if len > step, distance(segment: p.location, q.location, toSegment: a, b) <= reach {
+                let n = Int((len / step).rounded(.up))
+                for k in 1..<n {
+                    let t = CGFloat(k) / CGFloat(n)
+                    dense.append(InkPoint(CGPoint(x: p.location.x + dx * t, y: p.location.y + dy * t),
+                                          time: p.time + (q.time - p.time) * Double(t)))
+                }
+            }
+            dense.append(q)
+        }
+        let erased = dense.map { distance($0.location, toSegment: a, b) <= reach }
+        guard erased.contains(true) else { return nil }
+        var pieces: [[InkPoint]] = []
+        var run: [InkPoint] = []
+        for (p, gone) in zip(dense, erased) {
+            if gone {
+                if run.count >= 2 { pieces.append(run) }
+                run = []
+            } else {
+                run.append(p)
+            }
+        }
+        if run.count >= 2 { pieces.append(run) }
+        return pieces
     }
 }
