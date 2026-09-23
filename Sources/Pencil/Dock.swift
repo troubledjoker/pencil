@@ -30,6 +30,8 @@ final class DockController {
     private var swatch: DockSwatch!
     private let flyout = ColorFlyout()
     private var lastMode: Mode?
+    /// Mouse monitors that collapse the open toolbar on a click anywhere else.
+    private var outsideClickMonitors: [Any] = []
 
     private(set) var isExpanded = false
     /// Set by the app delegate: the toolbar's Quit button asks first (see `QuitConfirmation`).
@@ -357,6 +359,7 @@ final class DockController {
         let gen = generation
         if !expand { flyout.close() }
         HintCenter.shared.hide()
+        if expand { installOutsideClickMonitors() } else { removeOutsideClickMonitors() }
 
         if expand {
             // 1. Work out the final, anchored and clamped frame up front.
@@ -399,6 +402,33 @@ final class DockController {
                 self.updatePeek()
             }
         }
+    }
+
+    /// A click in another app, on the desktop or on the ink canvas collapses the open
+    /// toolbar (the click still goes through, so a stroke still draws). Clicks on Pencil's
+    /// own panels (the toolbar, the color flyout, the pill, the clipboard sidebar) don't.
+    /// Global mouse monitors need no Accessibility permission.
+    private func installOutsideClickMonitors() {
+        removeOutsideClickMonitors()
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.setExpanded(false) }
+        }) {
+            outsideClickMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                if event.window == nil || event.window is OverlayWindow { self?.setExpanded(false) }
+            }
+            return event
+        }) {
+            outsideClickMonitors.append(local)
+        }
+    }
+
+    private func removeOutsideClickMonitors() {
+        outsideClickMonitors.forEach(NSEvent.removeMonitor)
+        outsideClickMonitors.removeAll()
     }
 
     /// Resizes the panel without animation.

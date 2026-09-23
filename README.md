@@ -256,7 +256,7 @@ Full details: [docs/CLIPBOARD.md](docs/CLIPBOARD.md)
 
 Pencil has no Dock icon. It lives in a **pencil tab on the left edge of the screen**.
 
-- **Hover** the tab and it slides out. **Click** it to open the toolbar.
+- **Hover** the tab and it slides out. **Click** it to open the toolbar. Click anywhere else to close it.
 - **Drag** it up or down, or onto another display. It remembers where you left it.
 - **Hover** any button to see its name and shortcut.
 - The toolbar never takes focus from the app you're working in.
