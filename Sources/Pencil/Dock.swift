@@ -32,6 +32,8 @@ final class DockController {
     private var lastMode: Mode?
 
     private(set) var isExpanded = false
+    /// Set by the app delegate: the toolbar's Quit button asks first (see `QuitConfirmation`).
+    var onQuit: (() -> Void)?
     /// Floating pill: stroke size while drawing, Undo / Clear while drawing or there's ink.
     private let editPill = EditPill()
     private var hovering = false
@@ -154,7 +156,7 @@ final class DockController {
 
     private func buildToolbar() {
         let w = Self.expandedWidth
-        // Sections from the handle end: handle, Draw, Edit, Capture, Clipboard, Off.
+        // Sections from the handle end: handle, Draw, Edit, Capture, Clipboard, Off, Hide / Quit.
         // The handle slot is empty: the persistent pencil view sits on top of it.
         sections = []
         handleSpacer = NSView(frame: NSRect(x: 0, y: 0, width: 44, height: 40))
@@ -222,6 +224,15 @@ final class DockController {
             self?.setExpanded(false)
         }
         sections.append(off)
+
+        // Pencil itself, at the very end: tuck the toolbar away (like ⌥9), or quit (asks first).
+        let hide = action("chevron.left.to.line", Shortcuts.hint("Hide", Shortcuts.Feature.hide.global)) { [weak self] in
+            self?.setExpanded(false)
+        }
+        let quit = action("power", Shortcuts.hint("Quit Pencil", Shortcuts.Feature.quit.global)) { [weak self] in
+            self?.onQuit?()
+        }
+        sections.append(DockGroup([hide, quit]))
 
         let total = sections.reduce(Self.sectionPadding * 2 + Self.sectionGap * CGFloat(sections.count - 1)) {
             $0 + $1.frame.height

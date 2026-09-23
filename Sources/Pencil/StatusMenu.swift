@@ -14,6 +14,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     /// Set by the app delegate: the dock lives there.
     var onToggleDock: (() -> Void)?
     var onCollapseDock: (() -> Void)?
+    /// Quit Pencil (⌘Q while the menu is open) goes through the confirmation.
+    var onQuit: (() -> Void)?
     private let recordItem = NSMenuItem(title: "Start screen recording…", action: nil, keyEquivalent: "5")
 
     init(controller: AppController) {
@@ -226,7 +228,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openFolder() { Snapshotter.openFolder() }
-    @objc private func quit() { NSApp.terminate(nil) }
+    // After the menu has closed, so the confirmation can take the keyboard.
+    @objc private func quit() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.onQuit?() }
+        }
+    }
 }
 
 /// Start-at-login via SMAppService. Failures (e.g. running outside an app bundle,

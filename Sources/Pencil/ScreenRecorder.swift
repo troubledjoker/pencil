@@ -23,6 +23,8 @@ final class ScreenRecorder {
     private let outline = RecordingOutline()
     private var ticker: Timer?
     private var startedAt: Date?
+    /// Run once the file is finished (saved or failed), for "stop, save, then quit".
+    private var afterFinish: [() -> Void] = []
 
     func toggle() {
         if isRecording { stop() } else { begin() }
@@ -96,6 +98,19 @@ final class ScreenRecorder {
         Task { @MainActor in await session.stop() }
     }
 
+    /// Stops a running recording and calls `done` once the file is saved (or failed, or after
+    /// `timeout` as a safety net). Calls it right away when nothing is recording.
+    func stopAndSave(timeout: TimeInterval = 6, _ done: @escaping () -> Void) {
+        guard isRecording || session != nil else { done(); return }
+        var called = false
+        let once = { if !called { called = true; done() } }
+        afterFinish.append(once)
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+            MainActor.assumeIsolated { once() }
+        }
+        stop()
+    }
+
     private func startTicker() {
         let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -126,6 +141,9 @@ final class ScreenRecorder {
         case .failure(let error):
             fail(error.localizedDescription)
         }
+        let waiting = afterFinish
+        afterFinish.removeAll()
+        waiting.forEach { $0() }
     }
 
     private func fail(_ why: String) {

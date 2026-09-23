@@ -27,7 +27,7 @@ public enum Shortcuts {
         // Clipboard
         case clipboard, pasteAll
         // Pencil
-        case toggleDock, shortcuts
+        case toggleDock, shortcuts, quit
 
         /// Virtual key code (kVK_ANSI_*).
         public var keyCode: Int {
@@ -46,6 +46,7 @@ public enum Shortcuts {
             case .undo: return 6            // Z
             case .clear: return 7           // X
             case .shortcuts: return 44      // /
+            case .quit: return 12           // Q
             case .pasteAll, .clipboard: return 9 // V
             }
         }
@@ -75,6 +76,7 @@ public enum Shortcuts {
             case .undo: return "⌥Z"
             case .clear: return "⌥X"
             case .shortcuts: return "⌥/"
+            case .quit: return "⌥Q"
             case .burst: return "⇧⌥4"
             case .pasteAll: return "⌥⇧V"
             case .clipboard: return "⌃⌘V"
@@ -100,15 +102,20 @@ public enum Shortcuts {
             case .pasteAll: return "Paste the last burst one by one"
             case .toggleDock: return "Open / close the toolbar"
             case .shortcuts: return "Show this cheat sheet"
+            case .quit: return "Quit Pencil (asks first)"
             }
         }
     }
 
     /// Everything the toolbar, the Undo/Clear pill and the menu can do. Each maps to its
-    /// global key (exhaustive switch), so a new feature can't ship without one.
-    public enum Feature: CaseIterable, Sendable {
+    /// global key (exhaustive switch), so a new feature can't ship without one. A feature
+    /// that is just another way to do an existing one (see `aliases`) shares that key.
+    public enum Feature: CaseIterable, Hashable, Sendable {
         case laser, pen, highlighter, off, bigger, smaller, undo, clear, snapshot, region, burst,
-             captureDrawing, record, clipboard, pasteAll, toggleDock, shortcuts
+             captureDrawing, record, clipboard, pasteAll, toggleDock, shortcuts,
+             /// The toolbar's Hide button: collapses the toolbar, the same as ⌥9.
+             hide,
+             quit
 
         public var global: Global {
             switch self {
@@ -129,8 +136,13 @@ public enum Shortcuts {
             case .pasteAll: return .pasteAll
             case .toggleDock: return .toggleDock
             case .shortcuts: return .shortcuts
+            case .hide: return .toggleDock
+            case .quit: return .quit
             }
         }
+
+        /// Features that deliberately share another feature's global key (alias → owner).
+        public static let aliases: [Feature: Feature] = [.hide: .toggleDock]
     }
 
     /// The cheat sheet's global sections.
@@ -139,7 +151,7 @@ public enum Shortcuts {
         ("Edit", [.undo, .clear]),
         ("Capture", [.snapshot, .region, .burst, .captureDrawing, .record]),
         ("Clipboard", [.clipboard, .pasteAll]),
-        ("Pencil", [.toggleDock, .shortcuts]),
+        ("Pencil", [.toggleDock, .shortcuts, .quit]),
     ]
 
     // MARK: Conflicts with macOS's own shortcuts

@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dock: DockController?
     private var statusMenu: StatusMenuController?
     private var hotkeys: HotkeyCenter?
+    private lazy var quitConfirmation = QuitConfirmation(controller: controller)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller.start()
@@ -28,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.dock = dock
         statusMenu.onToggleDock = { [weak dock] in dock?.toggleExpanded() }
         statusMenu.onCollapseDock = { [weak dock] in dock?.setExpanded(false) }
+        let confirmQuit: () -> Void = { [weak self] in self?.quitConfirmation.show() }
+        statusMenu.onQuit = confirmQuit
+        dock.onQuit = confirmQuit
         self.statusMenu = statusMenu
 
         controller.onStateChange = { [weak dock, weak statusMenu] in
@@ -53,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let h = HotkeyCenter()
         let c = controller
         let dock = self.dock
+        let quitConfirmation = self.quitConfirmation
         func action(_ g: Shortcuts.Global) -> () -> Void {
             switch g {
             case .laser: return { c.toggleTool(.laser) }
@@ -76,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .pasteAll: return { BatchPaster.shared.pasteAll(toast: c.toast) }
             case .toggleDock: return { dock?.toggleExpanded() }
             case .shortcuts: return { c.shortcutsHUD.show() }
+            case .quit: return { quitConfirmation.show() }
             }
         }
         // A key macOS itself uses (e.g. a screenshot shortcut remapped to ⌥4) would fire

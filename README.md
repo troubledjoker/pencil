@@ -5,8 +5,12 @@ Claude Code. It's a small native macOS app (Swift + AppKit, macOS 14+).
 
 ## Quitting
 
-- **Quit:** click the Pencil icon in the menu bar → **Quit Pencil**. Or from a terminal:
-  `pkill -x Pencil`.
+- **Quit:** press **⌥Q**, click the toolbar's **Quit** button (the power icon at the
+  bottom), or click the Pencil icon in the menu bar → **Quit Pencil** (⌘Q while the menu is
+  open). Each asks first in a small "Quit Pencil?" panel: **Return** or **Quit** quits, **Esc**,
+  **Cancel** or a click outside keeps Pencil running. Quitting clears what's drawn on screen;
+  clipboard history and captures are kept. If a screen recording is running, it's stopped
+  and saved first. From a terminal, `pkill -x Pencil` quits without asking.
 - **Stop it starting at login:** menu bar icon → uncheck **Start at login** (or System
   Settings → General → Login Items).
 - **Start it again:** `open build/Pencil.app`, or find Pencil in Spotlight.
@@ -45,6 +49,7 @@ Every feature has a global key (they work from any app, with the dock collapsed)
 | --- | --- |
 | **⌥9** | Open / close the toolbar |
 | **⌥/** | Show the keyboard shortcuts on screen |
+| **⌥Q** | Quit Pencil (asks first) |
 
 | While drawing (no modifier) | |
 | --- | --- |
@@ -98,7 +103,9 @@ with a small fallback item in the menu bar.
     also closes it. The active tool's icon takes the ink color.
   - **Capture:** Snapshot (whole screen), Capture region, Capture drawing, Screen recording
   - **Clipboard:** opens the clipboard history sidebar (⌃⌘V)
-  - **Off** at the end
+  - **Off**
+  - **Hide** and **Quit** at the very end: Hide tucks the toolbar back into the pencil tile
+    (the same as clicking the handle or ⌥9); Quit asks before quitting Pencil (⌥Q)
 - The toolbar stays open while you draw, so you can switch color mid-drawing.
   Click the pencil handle at the top to collapse it. Off turns drawing off and collapses it.
 - **Undo / Clear** live in a small separate pill on the same edge that appears while

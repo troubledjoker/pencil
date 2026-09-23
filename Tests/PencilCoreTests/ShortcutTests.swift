@@ -19,7 +19,7 @@ final class ShortcutTests: XCTestCase {
     func testGlobalDigits() {
         XCTAssertEqual(Shortcuts.Global.allCases.map(\.label),
                        ["⌥1", "⌥2", "⌥7", "⌥0", "⌥]", "⌥[", "⌥Z", "⌥X", "⌥3", "⌥4", "⇧⌥4", "⌥6", "⌥5",
-                        "⌃⌘V", "⌥⇧V", "⌥9", "⌥/"])
+                        "⌃⌘V", "⌥⇧V", "⌥9", "⌥/", "⌥Q"])
         XCTAssertEqual(Shortcuts.Global.burst.keyCode, Shortcuts.Global.region.keyCode)
         XCTAssertEqual(Shortcuts.Global.pasteAll.modifiers, Shortcuts.Mods.option | Shortcuts.Mods.shift)
         XCTAssertEqual(Shortcuts.Global.region.label, "⌥4")
@@ -94,16 +94,30 @@ final class ShortcutTests: XCTestCase {
             .undo: "⌥Z", .clear: "⌥X",
             .snapshot: "⌥3", .region: "⌥4", .burst: "⇧⌥4", .captureDrawing: "⌥6", .record: "⌥5",
             .clipboard: "⌃⌘V", .pasteAll: "⌥⇧V",
-            .toggleDock: "⌥9", .shortcuts: "⌥/",
+            .toggleDock: "⌥9", .shortcuts: "⌥/", .hide: "⌥9", .quit: "⌥Q",
         ]
         for feature in Shortcuts.Feature.allCases {
             XCTAssertEqual(feature.global.label, expected[feature], "\(feature) has no (or the wrong) global key")
         }
         XCTAssertEqual(expected.count, Shortcuts.Feature.allCases.count, "a feature is missing from this table")
-        let globals = Shortcuts.Feature.allCases.map(\.global)
+        // Aliases (Hide = ⌥9) share their owner's key on purpose; every other feature is unique.
+        for (alias, owner) in Shortcuts.Feature.aliases {
+            XCTAssertEqual(alias.global, owner.global, "\(alias) must use \(owner)'s key")
+            XCTAssertNil(Shortcuts.Feature.aliases[owner], "an alias can't point at another alias")
+        }
+        let globals = Shortcuts.Feature.allCases.filter { Shortcuts.Feature.aliases[$0] == nil }.map(\.global)
         XCTAssertEqual(Set(globals.map(\.label)).count, globals.count, "two features share a global key")
         XCTAssertEqual(Set(Shortcuts.Global.allCases.map(\.label)), Set(globals.map(\.label)),
                        "every global key belongs to a feature")
+    }
+
+    func testHideAndQuitKeys() {
+        XCTAssertEqual(Shortcuts.Feature.hide.global, .toggleDock)
+        XCTAssertEqual(Shortcuts.hint("Hide", Shortcuts.Feature.hide.global), "Hide  ⌥9")
+        XCTAssertEqual(Shortcuts.Global.quit.keyCode, 12) // kVK_ANSI_Q
+        XCTAssertEqual(Shortcuts.Global.quit.modifiers, Shortcuts.Mods.option)
+        XCTAssertEqual(Shortcuts.hint("Quit Pencil", .quit), "Quit Pencil  ⌥Q")
+        XCTAssertEqual(Shortcuts.globalSections.last?.keys, [.toggleDock, .shortcuts, .quit])
     }
 
     func testSizeKeys() {
