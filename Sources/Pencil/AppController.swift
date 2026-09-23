@@ -138,13 +138,18 @@ final class AppController {
     }
 
     /// Steps the stroke size. New strokes use it; existing ink keeps its width.
-    /// `announce` shows a brief "Size N" toast (for keys, not the pill's own buttons).
+    /// `announce` shows a brief "Size N" toast (for keys, not the pill's own controls).
     func changeSize(by delta: Int, announce: Bool) {
         let changed = strokeSize.step(by: delta)
         if announce {
             toast.show("Size \(strokeSize.level)", on: Snapshotter.screenUnderMouse(), duration: 0.9)
         }
         if changed { onStateChange?() }
+    }
+
+    /// Sets the stroke size level directly (the pill's size slider).
+    func setSizeLevel(_ level: Int) {
+        if strokeSize.set(level) { onStateChange?() }
     }
 
     func undo() {
@@ -186,7 +191,7 @@ final class AppController {
         else { return false }
         switch command {
         case .passThrough:
-            // Esc peels one layer at a time: the help, then the color flyout, then drawing.
+            // Esc peels one layer at a time: the help, then the size slider or color flyout, then drawing.
             if shortcutsHUD.isShown { shortcutsHUD.hide(); return true }
             if escapeInterceptor?() == true { return true }
             if mode.isDrawing { setMode(.passThrough) }

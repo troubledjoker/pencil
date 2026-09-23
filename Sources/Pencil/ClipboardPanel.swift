@@ -952,9 +952,10 @@ final class ClipboardPanelWindow: NSPanel {
         // Just below the menu bar, so the menu bar draws over the sidebar's top strip. That is
         // below the ink overlay too, which only matters while a drawing mode is on.
         // Transparent so the content can slide in from the edge; the sidebar itself is solid.
+        // isFloatingPanel resets the level to .floating, so it must come first.
+        isFloatingPanel = true
         level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        isFloatingPanel = true
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
         backgroundColor = .clear

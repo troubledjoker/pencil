@@ -130,6 +130,7 @@ final class DockController {
         editPill.onUndo = { [weak self] in self?.controller.undo() }
         editPill.onClear = { [weak self] in self?.controller.clear() }
         editPill.onSize = { [weak self] delta in self?.controller.changeSize(by: delta, announce: false) }
+        editPill.onSetLevel = { [weak self] level in self?.controller.setSizeLevel(level) }
         flyout.companion = panel
         flyout.onPick = { [weak self] color in
             self?.controller.setColor(color)
@@ -475,8 +476,9 @@ final class DockController {
 
     // MARK: Snapshots
 
-    /// Esc while the flyout is open closes it. Returns true if it did.
+    /// Esc while the size slider or the color flyout is open closes it. Returns true if it did.
     func handleEscape() -> Bool {
+        if editPill.closeSlider() { return true }
         guard flyout.isOpen else { return false }
         flyout.close()
         return true
@@ -565,8 +567,7 @@ final class DockController {
         let frame = DockGeometry.editPillFrame(anchor: anchor, x: s.frame.minX, size: size,
                                                preferBelow: preferBelow, in: s.visibleFrame)
         if let drawingTool {
-            let level = controller.strokeSize.level
-            editPill.configure(size: .init(level: level, width: controller.strokeSize.width(for: drawingTool),
+            editPill.configure(size: .init(level: controller.strokeSize.level, tool: drawingTool,
                                            color: controller.color,
                                            onTop: DockGeometry.sizeSectionOnTop(pill: frame, in: s.visibleFrame)),
                                hasInk: hasInk)
@@ -871,10 +872,12 @@ final class DockPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(contentRect: contentRect, styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
+        // Must come before `level`: setting it resets the level to .floating (3), which
+        // put the dock and the pill under the ink overlay, so drawing ate their clicks.
+        isFloatingPanel = true
         // Above the ink overlay (.screenSaver) so the overlay never eats dock clicks.
         level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        isFloatingPanel = true
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
         backgroundColor = .clear
@@ -1352,42 +1355,64 @@ final class PillBorder: NSView {
 
 // MARK: - Undo / Clear pill
 
-/// The size section's preview: a dot as wide as the stroke will be, in the ink color.
-/// Scrolling over it changes the size.
+/// Turns scroll-wheel / trackpad deltas into whole size steps (+1 bigger, −1 smaller).
+struct ScrollStepper {
+    private var accumulator: CGFloat = 0
+
+    mutating func steps(for event: NSEvent) -> Int {
+        // Trackpads send many small deltas; step once per ~a notch's worth.
+        let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 12 : event.scrollingDeltaY
+        // Physical direction: wheel or fingers up = bigger, whatever "natural scrolling" says.
+        let up = event.isDirectionInvertedFromDevice ? -dy : dy
+        if event.phase == .began { accumulator = 0 }
+        accumulator += up
+        var net = 0
+        while abs(accumulator) >= 1 {
+            let step = accumulator > 0 ? 1 : -1
+            accumulator -= CGFloat(step)
+            net += step
+        }
+        return net
+    }
+}
+
+/// The pill's size control: a dot as wide as the stroke will be, in the ink color.
+/// Hovering (or clicking) opens the size slider; scrolling over it changes the size.
 final class SizePreviewDot: DragSurface {
     var onStep: ((Int) -> Void)?
+    var onHover: ((Bool) -> Void)?
     var state: EditPill.SizeState? {
         didSet {
             guard state != oldValue else { return }
             needsDisplay = true
             if let state {
-                hint = "Size \(state.level) of \(StrokeSize.levels.upperBound)"
-                setAccessibilityLabel(hint)
+                setAccessibilityValue("Size \(state.level) of \(StrokeSize.levels.upperBound)")
             }
         }
     }
-    private var scrollAccumulator: CGFloat = 0
+    private var stepper = ScrollStepper()
 
     init() {
-        super.init(frame: NSRect(x: 0, y: 0, width: 36, height: 34))
-        setAccessibilityRole(.valueIndicator)
+        super.init(frame: NSRect(x: 0, y: 0, width: DockGeometry.editPillWidth,
+                                 height: DockGeometry.editPillSizeDotHeight))
+        hint = "Stroke size  \(Shortcuts.Global.smaller.label) \(Shortcuts.Global.bigger.label)"
+        // To the right is where the slider opens.
+        hintPlacement = .above
+        setAccessibilityLabel("Stroke size")
+        setAccessibilityRole(.button)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    override func hoverChanged(_ inside: Bool) {
+        needsDisplay = true
+        onHover?(inside)
+    }
+
     override func scrollWheel(with event: NSEvent) {
-        // Trackpads send many small deltas; step once per ~a notch's worth.
-        let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 12 : event.scrollingDeltaY
-        // Physical direction: wheel or fingers up = bigger, whatever "natural scrolling" says.
-        let up = event.isDirectionInvertedFromDevice ? -dy : dy
-        if event.phase == .began { scrollAccumulator = 0 }
-        scrollAccumulator += up
-        while abs(scrollAccumulator) >= 1 {
-            let step = scrollAccumulator > 0 ? 1 : -1
-            scrollAccumulator -= CGFloat(step)
-            onStep?(step)
-        }
+        let n = stepper.steps(for: event)
+        if n != 0 { onStep?(n) }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1395,6 +1420,10 @@ final class SizePreviewDot: DragSurface {
         // The actual stroke width, capped to what fits in the pill.
         let d = min(state.width, bounds.height - 4, bounds.width - 6)
         let r = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        if isHovering {
+            NSColor.white.withAlphaComponent(0.12).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 3, dy: 2), xRadius: 7, yRadius: 7).fill()
+        }
         nsColor(state.color).setFill()
         NSBezierPath(ovalIn: r).fill()
         if d > 4 {
@@ -1403,6 +1432,238 @@ final class SizePreviewDot: DragSurface {
             ring.lineWidth = 0.75
             ring.stroke()
         }
+    }
+}
+
+/// The slider's face: a wedge (thin → thick, in the ink color) with faint ticks at the
+/// 7 levels and a knob as wide as the stroke. Press and drag, or click, to pick a level;
+/// the scroll wheel steps it.
+final class SizeSliderView: NSView {
+    var state: EditPill.SizeState? { didSet { if state != oldValue { needsDisplay = true; updateAccessibility() } } }
+    var onLevel: ((Int) -> Void)?
+    var onStep: ((Int) -> Void)?
+    var onHover: ((Bool) -> Void)?
+    var onPressEnd: (() -> Void)?
+    private(set) var isPressed = false
+    private var stepper = ScrollStepper()
+    private var hoverArea: NSTrackingArea?
+
+    /// The knob and the wedge never get taller than this (the highlighter's big levels).
+    private var cap: CGFloat { bounds.height - 8 }
+    var track: SizeTrack { SizeTrack(minX: 16, maxX: bounds.width - 18) }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.slider)
+        setAccessibilityLabel("Stroke size")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseEnteredAndExited], owner: self)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false) }
+
+    override func mouseDown(with event: NSEvent) {
+        HintCenter.shared.hide()
+        isPressed = true
+        pick(event)
+    }
+
+    override func mouseDragged(with event: NSEvent) { pick(event) }
+
+    override func mouseUp(with event: NSEvent) {
+        pick(event)
+        isPressed = false
+        onPressEnd?()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let n = stepper.steps(for: event)
+        if n != 0 { onStep?(n) }
+    }
+
+    private func pick(_ event: NSEvent) {
+        guard var s = state else { return }
+        let level = track.level(at: convert(event.locationInWindow, from: nil).x)
+        guard level != s.level else { return }
+        // Move the knob right away; the app's state change follows through `configure`.
+        s.level = level
+        s.width = s.tool.lineWidth(level: level)
+        state = s
+        onLevel?(level)
+    }
+
+    private func updateAccessibility() {
+        guard let state else { return }
+        setAccessibilityValue("\(state.level) of \(StrokeSize.levels.upperBound)")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let state else { return }
+        let t = track
+        let mid = bounds.midY
+        let thin = min(max(state.tool.lineWidth(level: StrokeSize.levels.lowerBound), 1.5), cap)
+        let thick = min(state.tool.lineWidth(level: StrokeSize.levels.upperBound), cap)
+
+        // The wedge, with round ends.
+        let wedge = NSBezierPath()
+        wedge.move(to: NSPoint(x: t.minX, y: mid - thin / 2))
+        wedge.line(to: NSPoint(x: t.maxX, y: mid - thick / 2))
+        wedge.appendArc(withCenter: NSPoint(x: t.maxX, y: mid), radius: thick / 2,
+                        startAngle: -90, endAngle: 90)
+        wedge.line(to: NSPoint(x: t.minX, y: mid + thin / 2))
+        wedge.appendArc(withCenter: NSPoint(x: t.minX, y: mid), radius: thin / 2,
+                        startAngle: 90, endAngle: 270)
+        wedge.close()
+        nsColor(state.color).withAlphaComponent(0.35).setFill()
+        wedge.fill()
+
+        // Faint ticks at the 7 levels, a little taller than the wedge there.
+        NSColor.white.withAlphaComponent(0.22).setFill()
+        for level in StrokeSize.levels {
+            let x = t.x(for: level)
+            let h = t.wedgeThickness(at: x, thin: thin, thick: thick) + 6
+            NSRect(x: x - 0.5, y: mid - h / 2, width: 1, height: h).fill()
+        }
+
+        // The knob: as wide as the actual stroke (capped to fit), ringed so a thin one shows.
+        let d = min(state.width, cap)
+        let x = t.x(for: state.level)
+        let knob = NSRect(x: x - d / 2, y: mid - d / 2, width: d, height: d)
+        let ring = NSBezierPath(ovalIn: knob.insetBy(dx: -1.5, dy: -1.5))
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.set()
+        NSColor.white.setFill()
+        ring.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        nsColor(state.color).setFill()
+        NSBezierPath(ovalIn: knob).fill()
+    }
+}
+
+/// The horizontal size slider that grows out to the right of the pill, level with its
+/// dot (like the color flyout). Its own non-activating panel at the dock's level: above
+/// the ink, takes clicks, never takes focus, and left out of captures as a Pencil window.
+@MainActor
+final class SizeSlider {
+    static let size = NSSize(width: 176, height: 34)
+
+    private let panel: DockPanel
+    private let view: SizeSliderView
+    private(set) var isOpen = false
+
+    var onLevel: ((Int) -> Void)? { get { view.onLevel } set { view.onLevel = newValue } }
+    var onStep: ((Int) -> Void)? { get { view.onStep } set { view.onStep = newValue } }
+    var onHover: ((Bool) -> Void)? { get { view.onHover } set { view.onHover = newValue } }
+    var onPressEnd: (() -> Void)? { get { view.onPressEnd } set { view.onPressEnd = newValue } }
+    var isPressed: Bool { view.isPressed }
+    /// Where it is (or is going), in screen coordinates.
+    private(set) var targetFrame: NSRect = .zero
+
+    init() {
+        let size = Self.size
+        panel = DockPanel(contentRect: NSRect(origin: .zero, size: size))
+        panel.hasShadow = true
+
+        let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
+        effect.material = .hudWindow
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.appearance = NSAppearance(named: .vibrantDark)
+        effect.maskImage = Self.pillMask(height: size.height)
+        effect.autoresizingMask = [.width, .height]
+        panel.contentView = effect
+
+        view = SizeSliderView(frame: effect.bounds)
+        view.autoresizingMask = [.width, .height]
+        effect.addSubview(view)
+        let border = PillBorder(frame: effect.bounds)
+        border.autoresizingMask = [.width, .height]
+        effect.addSubview(border)
+    }
+
+    func update(_ state: EditPill.SizeState) {
+        view.state = state
+    }
+
+    private func frame(anchorX x: CGFloat, centerY: CGFloat) -> NSRect {
+        NSRect(x: x, y: centerY - Self.size.height / 2, width: Self.size.width, height: Self.size.height)
+    }
+
+    func open(anchorX x: CGFloat, centerY: CGFloat) {
+        guard !isOpen else { return move(anchorX: x, centerY: centerY) }
+        isOpen = true
+        let target = frame(anchorX: x, centerY: centerY)
+        targetFrame = target
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        panel.setFrame(reduce ? target : NSRect(x: x, y: target.minY, width: target.height, height: target.height),
+                       display: false)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.14
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(target, display: true)
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    /// Follows the pill when the dock moves it.
+    func move(anchorX x: CGFloat, centerY: CGFloat) {
+        guard isOpen else { return }
+        let target = frame(anchorX: x, centerY: centerY)
+        guard target != targetFrame else { return }
+        targetFrame = target
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(target, display: true)
+        }
+    }
+
+    func close() {
+        guard isOpen else { return }
+        isOpen = false
+        let f = panel.frame
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.1
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().setFrame(NSRect(x: f.minX, y: f.minY, width: f.height, height: f.height), display: true)
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.isOpen else { return }
+                self.panel.orderOut(nil)
+            }
+        })
+    }
+
+    private static func pillMask(height h: CGFloat) -> NSImage {
+        let r = h / 2
+        let image = NSImage(size: NSSize(width: h + 1, height: h), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+        image.resizingMode = .stretch
+        return image
     }
 }
 
@@ -1417,7 +1678,7 @@ final class PillDivider: NSView {
 }
 
 /// A small floating pill on the screen edge. While a drawing tool is active it has a size
-/// section (+, a live preview dot, −) above or below Undo / Clear; otherwise it shows only
+/// dot (hover it for the size slider) above or below Undo / Clear; otherwise it shows only
 /// while there's ink, with just Undo and Clear. Same dark look as the toolbar: square and
 /// borderless on the edge side, rounded outer corners, window shadow that follows the shape.
 /// Its own non-activating panel at the dock's level (above the ink, and left out of
@@ -1426,28 +1687,44 @@ final class PillDivider: NSView {
 final class EditPill {
     struct SizeState: Equatable {
         var level: Int
+        var tool: Tool
         var width: CGFloat
         var color: InkColor
         /// Size section at the top of the pill (else at the bottom).
         var onTop: Bool
+
+        init(level: Int, tool: Tool, color: InkColor, onTop: Bool) {
+            self.level = level
+            self.tool = tool
+            self.width = tool.lineWidth(level: level)
+            self.color = color
+            self.onTop = onTop
+        }
     }
 
     var onUndo: (() -> Void)?
     var onClear: (() -> Void)?
-    /// +1 / −1 from the size buttons or the scroll wheel over the dot.
+    /// ±N steps from the scroll wheel over the dot or the slider.
     var onSize: ((Int) -> Void)?
+    /// A level picked on the slider.
+    var onSetLevel: ((Int) -> Void)?
 
     private let panel: DockPanel
     private let undo: DockButton
     private let clear: DockButton
-    private let bigger: DockButton
-    private let smaller: DockButton
     private let dot = SizePreviewDot()
     private let divider = PillDivider()
+    private let slider = SizeSlider()
     private var isShown = false
     private var generation = 0
+    /// Where the pill is (or is going), in screen coordinates.
+    private var targetFrame: NSRect = .zero
+    private var openWork: DispatchWorkItem?
+    private var closeWork: DispatchWorkItem?
     /// How far it slides out of the edge when appearing.
     private static let slide: CGFloat = 10
+    private static let openDelay: TimeInterval = 0.15
+    private static let closeDelay: TimeInterval = 0.3
 
     init() {
         let size = DockGeometry.editPillSize(showingSize: false)
@@ -1465,14 +1742,19 @@ final class EditPill {
 
         undo = DockButton(symbol: "arrow.uturn.backward", hint: Shortcuts.hint("Undo", .undo))
         clear = DockButton(symbol: "trash", hint: Shortcuts.hint("Clear all", .clear))
-        bigger = DockButton(symbol: "plus", hint: Shortcuts.hint("Bigger", .bigger))
-        smaller = DockButton(symbol: "minus", hint: Shortcuts.hint("Smaller", .smaller))
         undo.onClick = { [weak self] in self?.onUndo?() }
         clear.onClick = { [weak self] in self?.onClear?() }
-        bigger.onClick = { [weak self] in self?.onSize?(1) }
-        smaller.onClick = { [weak self] in self?.onSize?(-1) }
         dot.onStep = { [weak self] delta in self?.onSize?(delta) }
-        for v in [undo, clear, bigger, smaller, dot, divider] as [NSView] { effect.addSubview(v) }
+        dot.onClick = { [weak self] in self?.openSlider() }
+        dot.onHover = { [weak self] inside in self?.dotHoverChanged(inside) }
+        slider.onStep = { [weak self] delta in self?.onSize?(delta) }
+        slider.onLevel = { [weak self] level in self?.onSetLevel?(level) }
+        slider.onHover = { [weak self] inside in
+            guard let self else { return }
+            if inside { self.cancelClose() } else { self.scheduleClose() }
+        }
+        slider.onPressEnd = { [weak self] in self?.scheduleClose() }
+        for v in [undo, clear, dot, divider] as [NSView] { effect.addSubview(v) }
         configure(size: nil, hasInk: true)
     }
 
@@ -1481,7 +1763,7 @@ final class EditPill {
     func configure(size: SizeState?, hasInk: Bool) {
         let w = DockGeometry.editPillWidth
         let showSize = size != nil
-        for v in [bigger, smaller, dot, divider] as [NSView] { v.isHidden = !showSize }
+        for v in [dot, divider] as [NSView] { v.isHidden = !showSize }
         undo.alphaValue = hasInk ? 1 : 0.35
         clear.alphaValue = hasInk ? 1 : 0.35
         func center(_ v: NSView, y: CGFloat, height: CGFloat) {
@@ -1493,23 +1775,24 @@ final class EditPill {
         let editBase: CGFloat = (size?.onTop ?? false) ? 0 : (showSize ? sizeHeight : 0)
         center(clear, y: editBase + 1, height: 32)
         center(undo, y: editBase + edit - 1 - 32, height: 32)
-        guard let size else { return }
+        guard let size else {
+            closeSlider()
+            return
+        }
         let sizeBase: CGFloat = size.onTop ? edit : 0
-        // Top to bottom: +, dot, −, then the divider on the side facing Undo / Clear.
-        let dividerY = size.onTop ? sizeBase : sizeBase + sizeHeight - 9
-        let controlsBase = size.onTop ? sizeBase + 9 : sizeBase
-        center(smaller, y: controlsBase, height: 32)
-        dot.frame = NSRect(x: 0, y: controlsBase + 32, width: w, height: 34)
-        center(bigger, y: controlsBase + 66, height: 32)
+        // The dot, with the divider on the side facing Undo / Clear.
+        let dotHeight = DockGeometry.editPillSizeDotHeight
+        let dividerY = size.onTop ? sizeBase : sizeBase + dotHeight
+        dot.frame = NSRect(x: 0, y: size.onTop ? sizeBase + 9 : sizeBase, width: w, height: dotHeight)
         divider.frame = NSRect(x: 8, y: dividerY, width: w - 16, height: 9)
         dot.state = size
-        bigger.alphaValue = size.level < StrokeSize.levels.upperBound ? 1 : 0.35
-        smaller.alphaValue = size.level > StrokeSize.levels.lowerBound ? 1 : 0.35
+        slider.update(size)
     }
 
     /// Shows (fade + slide out of the edge) or moves it to `frame`.
     func show(at frame: NSRect, duration: CFTimeInterval) {
         generation += 1
+        targetFrame = frame
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if !isShown {
             isShown = true
@@ -1524,9 +1807,14 @@ final class EditPill {
             panel.animator().setFrame(frame, display: true)
             panel.animator().alphaValue = 1
         }
+        if slider.isOpen {
+            let a = sliderAnchor()
+            slider.move(anchorX: a.x, centerY: a.y)
+        }
     }
 
     func hide(duration: CFTimeInterval) {
+        closeSlider()
         guard isShown else { return }
         isShown = false
         generation += 1
@@ -1545,6 +1833,68 @@ final class EditPill {
                 self.panel.orderOut(nil)
             }
         })
+    }
+
+    // MARK: Size slider
+
+    /// Closes the slider if it's open (Esc, the drawing mode ending). Returns true if it was.
+    @discardableResult
+    func closeSlider() -> Bool {
+        openWork?.cancel()
+        closeWork?.cancel()
+        guard slider.isOpen else { return false }
+        slider.close()
+        return true
+    }
+
+    /// Just right of the pill, level with the dot (screen coordinates).
+    private func sliderAnchor() -> NSPoint {
+        NSPoint(x: targetFrame.maxX + 2, y: targetFrame.minY + dot.frame.midY)
+    }
+
+    private func openSlider() {
+        openWork?.cancel()
+        cancelClose()
+        guard isShown, !dot.isHidden, dot.state != nil else { return }
+        let a = sliderAnchor()
+        slider.open(anchorX: a.x, centerY: a.y)
+    }
+
+    private func dotHoverChanged(_ inside: Bool) {
+        if inside {
+            cancelClose()
+            guard !slider.isOpen else { return }
+            openWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated { self?.openSlider() }
+            }
+            openWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.openDelay, execute: work)
+        } else {
+            openWork?.cancel()
+            scheduleClose()
+        }
+    }
+
+    private func cancelClose() { closeWork?.cancel() }
+
+    /// Closes the slider once the mouse has been off both the dot and the slider for a moment.
+    private func scheduleClose() {
+        guard slider.isOpen else { return }
+        closeWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.slider.isOpen, !self.slider.isPressed else { return }
+                let mouse = NSEvent.mouseLocation
+                let dotRect = self.dot.frame.offsetBy(dx: self.targetFrame.minX, dy: self.targetFrame.minY)
+                if NSMouseInRect(mouse, dotRect, false) || NSMouseInRect(mouse, self.slider.targetFrame, false) {
+                    return // back inside; the next exit schedules it again
+                }
+                self.slider.close()
+            }
+        }
+        closeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeDelay, execute: work)
     }
 
     /// Square on the edge (left) side, rounded on the right.

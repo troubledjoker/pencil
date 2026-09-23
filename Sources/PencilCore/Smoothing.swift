@@ -110,10 +110,11 @@ public enum DockGeometry {
     }
 
     /// Heights of the floating edit pill: Undo/Clear only, and with the size section
-    /// (+, preview dot, −, a divider) added while a drawing tool is active.
+    /// (one preview dot and a divider) added while a drawing tool is active.
     public static let editPillWidth: CGFloat = 36
     public static let editPillHeight: CGFloat = 66
-    public static let editPillSizeSectionHeight: CGFloat = 32 + 34 + 32 + 9
+    public static let editPillSizeDotHeight: CGFloat = 34
+    public static let editPillSizeSectionHeight: CGFloat = editPillSizeDotHeight + 9
     public static func editPillSize(showingSize: Bool) -> CGSize {
         CGSize(width: editPillWidth,
                height: editPillHeight + (showingSize ? editPillSizeSectionHeight : 0))
