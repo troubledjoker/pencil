@@ -10,6 +10,8 @@ final class AppController {
     private(set) var mode: Mode = .off
     private(set) var lastDrawingTool: Tool = .pen
     private(set) var color: InkColor = .red
+    /// One stroke size for every tool (persisted).
+    let strokeSize = StrokeSizeSetting()
 
     /// Called after any change the UI should reflect (mode, color, ink).
     var onStateChange: (() -> Void)?
@@ -135,6 +137,16 @@ final class AppController {
         setColor(InkColor.palette[index])
     }
 
+    /// Steps the stroke size. New strokes use it; existing ink keeps its width.
+    /// `announce` shows a brief "Size N" toast (for keys, not the pill's own buttons).
+    func changeSize(by delta: Int, announce: Bool) {
+        let changed = strokeSize.step(by: delta)
+        if announce {
+            toast.show("Size \(strokeSize.level)", on: Snapshotter.screenUnderMouse(), duration: 0.9)
+        }
+        if changed { onStateChange?() }
+    }
+
     func undo() {
         invalidate(store.undo())
         onStateChange?()
@@ -149,7 +161,7 @@ final class AppController {
 
     func pointerDown(at p: CGPoint) {
         guard let tool = mode.tool else { return }
-        invalidate(store.begin(tool: tool, color: color, at: p, time: CACurrentMediaTime()))
+        invalidate(store.begin(tool: tool, color: color, width: strokeSize.width(for: tool), at: p, time: CACurrentMediaTime()))
         if tool == .laser { startFadeTimer() }
     }
 
@@ -182,6 +194,7 @@ final class AppController {
         case .color(let index): setColor(index: index)
         case .undo: undo()
         case .clear: clear()
+        case .size(let delta): changeSize(by: delta, announce: true)
         case .snapshot: snapshot(.screenUnderMouse)
         case .region: snapshot(.region)
         case .help: shortcutsHUD.show()

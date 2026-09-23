@@ -20,14 +20,14 @@ enum InkRenderer {
         guard !pts.isEmpty else { return }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        ctx.setLineWidth(stroke.tool.lineWidth)
+        ctx.setLineWidth(stroke.lineWidth)
         ctx.setStrokeColor(stroke.color.cgColor(alpha: stroke.tool.opacity))
         ctx.setLineJoin(.round)
         if stroke.tool == .highlighter {
             ctx.setLineCap(.butt)
             if pts.count == 1 {
                 // A flat-capped zero-length line draws nothing; show a short square mark.
-                let w = stroke.tool.lineWidth
+                let w = stroke.lineWidth
                 ctx.setFillColor(stroke.color.cgColor(alpha: stroke.tool.opacity))
                 ctx.fill(CGRect(x: pts[0].x - w / 4, y: pts[0].y - w / 2, width: w / 2, height: w))
                 return
@@ -49,7 +49,7 @@ enum InkRenderer {
         defer { ctx.restoreGState() }
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
-        let base = stroke.tool.lineWidth
+        let base = stroke.lineWidth
         // Two passes: a wide faint glow, then the bright core on top.
         for pass in 0..<2 {
             for seg in segs {

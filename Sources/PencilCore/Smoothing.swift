@@ -109,6 +109,22 @@ public enum DockGeometry {
         return (r, d)
     }
 
+    /// Heights of the floating edit pill: Undo/Clear only, and with the size section
+    /// (+, preview dot, −, a divider) added while a drawing tool is active.
+    public static let editPillWidth: CGFloat = 36
+    public static let editPillHeight: CGFloat = 66
+    public static let editPillSizeSectionHeight: CGFloat = 32 + 34 + 32 + 9
+    public static func editPillSize(showingSize: Bool) -> CGSize {
+        CGSize(width: editPillWidth,
+               height: editPillHeight + (showingSize ? editPillSizeSectionHeight : 0))
+    }
+
+    /// The size section sits at the pill's end away from the nearest end of the screen
+    /// (on top in the lower half, at the bottom in the upper half), so it stays reachable.
+    public static func sizeSectionOnTop(pill: CGRect, in visible: CGRect) -> Bool {
+        pill.midY <= visible.midY
+    }
+
     /// Where the floating Undo/Clear pill goes, next to `anchor` (the collapsed tile, or
     /// the open toolbar's background) on the screen edge at `x`.
     ///

@@ -13,6 +13,7 @@ Every feature has a global key (they work from any app, with the dock collapsed)
 | **⌥2** | Pen. Press again to turn it off |
 | **⌥7** | Highlighter. Press again to turn it off |
 | **⌥0** | Off: stop drawing and hide the ink |
+| **⌥]** / **⌥[** | Bigger / smaller stroke (one size for every tool) |
 
 | Edit | |
 | --- | --- |
@@ -43,12 +44,14 @@ Every feature has a global key (they work from any app, with the dock collapsed)
 | **1–5** | Red, yellow, green, blue, white |
 | **Z** or **⌘Z** | Undo |
 | **X** | Clear all |
+| **]** / **[** | Bigger / smaller stroke |
 | **⏎** | Capture the drawing: cropped to the ink plus some room around it, to the clipboard |
 | **S** / **A** | Snapshot screen / Region capture |
 | **Esc** | Stop drawing. Ink stays and clicks go through |
 | **?** | Show this cheat sheet |
 
-Pencil takes ⌥Z, ⌥X and ⌥/ globally, so those no longer type Ω, ≈ and ÷ while Pencil runs.
+Pencil takes ⌥Z, ⌥X, ⌥/, ⌥] and ⌥[ globally, so those no longer type Ω, ≈, ÷, ‘ and “
+while Pencil runs.
 
 If another app already owns one of these keys, Pencil says which one, once, in a toast. If
 one of them is also a macOS shortcut (for example "Copy picture of selected area to the
@@ -74,7 +77,7 @@ with a small fallback item in the menu bar.
 
 ## The edge dock
 
-- Collapsed, it's a small pencil tile (the Pencil icon artwork) peeking half out of the left
+- Collapsed, it's a small pencil tile (the Pencil icon artwork) peeking mostly out of the left
   edge. Hover it and it slides all the way out (and back in as soon as you move away). It
   stays fully out while you draw, record or drag it. The pencil stands upright in it; on hover, while a drawing mode is on, and while the toolbar is open it tips down to the icon's diagonal (and stands back up when it closes). It lifts slightly when you hover it, gets a ring in the current ink color while a drawing mode is on,
   and a red dot while recording.
@@ -90,10 +93,16 @@ with a small fallback item in the menu bar.
   - **Off** at the end
 - The toolbar stays open while you draw, so you can switch color mid-drawing.
   Click the pencil handle at the top to collapse it. Off turns drawing off and collapses it.
-- **Undo / Clear** live in a small separate pill on the same edge that appears only while
-  there's ink on screen, whether the dock is collapsed or open. It sits just below the
-  pencil (or past the far end of the open toolbar), and on the other side when there's no
-  room. It fades away when the ink is cleared. While drawing, **Z** and **X** do the same.
+- **Undo / Clear** live in a small separate pill on the same edge that appears while
+  there's ink on screen or a drawing tool is on, whether the dock is collapsed or open. It
+  sits just below the pencil (or past the far end of the open toolbar), and on the other
+  side when there's no room. It fades away when drawing is off and the ink is cleared.
+  While drawing, **Z** and **X** do the same.
+- **Stroke size:** while a drawing tool is on, the pill also has **+**, a dot showing the
+  actual stroke width in the ink color, and **−** (on the end away from the nearer top or
+  bottom of the screen, divided from Undo / Clear by a hairline). Scroll over the dot to
+  change it too. There are 7 sizes, shared by every tool and remembered; the highlighter
+  stays proportionally thicker than the pen. Ink already drawn keeps its width.
 - **Drag the tab** (or the handle) up or down to move it. It stays locked to the left
   edge. Drag onto another display to move it there. The position is remembered.
 - Hover any button for a moment to see its name and its global shortcut, if it has one.
@@ -116,7 +125,7 @@ saved. See [docs/CLIPBOARD.md](docs/CLIPBOARD.md).
 | Mode | What it does |
 | --- | --- |
 | Off | Ink hidden, clicks go to your apps. Ink is kept and comes back when you draw again, unless you cleared it. |
-| Pen | Solid 4pt strokes that stay until cleared. |
+| Pen | Solid strokes (4pt at the default size) that stay until cleared. |
 | Highlighter | Thick, 35% opacity, flat-capped strokes that stay until cleared. |
 | Laser | Thin glowing stroke that fades from the tail about 2.5s after each point is drawn. Nothing stays. |
 | Pass-through | Ink stays visible, but clicks go through to your apps. Press Esc while drawing to get here. |

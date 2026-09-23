@@ -63,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 c.setMode(.off)
                 dock?.setExpanded(false)
             }
+            case .bigger: return { c.changeSize(by: 1, announce: true) }
+            case .smaller: return { c.changeSize(by: -1, announce: true) }
             case .undo: return { c.undo() }
             case .clear: return { c.clear() }
             case .snapshot: return { c.snapshot(.screenUnderMouse) }

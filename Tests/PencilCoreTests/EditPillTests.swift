@@ -54,6 +54,40 @@ final class EditPillTests: XCTestCase {
         XCTAssertEqual(pill(up, preferBelow: false).maxY, up.minY - 6)
     }
 
+    // MARK: With the size section (a drawing tool is active)
+
+    private var tall: CGSize { DockGeometry.editPillSize(showingSize: true) }
+
+    func testSizeSectionMakesThePillTaller() {
+        XCTAssertEqual(DockGeometry.editPillSize(showingSize: false), CGSize(width: 36, height: 66))
+        XCTAssertEqual(tall.height, 66 + DockGeometry.editPillSizeSectionHeight)
+        XCTAssertGreaterThan(tall.height, 150)
+    }
+
+    func testTallPillNearTheBottomGoesAboveTheTile() {
+        let t = tile(centerY: 200) // 184...216: no room below for the tall pill
+        let p = DockGeometry.editPillFrame(anchor: t, x: 0, size: tall, preferBelow: true, in: visible)
+        XCTAssertEqual(p.minY, t.maxY + 6)
+        XCTAssertEqual(p.height, tall.height)
+        XCTAssertTrue(visible.contains(p))
+        XCTAssertTrue(DockGeometry.sizeSectionOnTop(pill: p, in: visible), "lower half: size away from the bottom")
+    }
+
+    func testTallPillNearTheTopGoesBelowTheTile() {
+        let t = tile(centerY: 850)
+        let p = DockGeometry.editPillFrame(anchor: t, x: 0, size: tall, preferBelow: true, in: visible)
+        XCTAssertEqual(p.maxY, t.minY - 6)
+        XCTAssertTrue(visible.contains(p))
+        XCTAssertFalse(DockGeometry.sizeSectionOnTop(pill: p, in: visible), "upper half: size away from the top")
+    }
+
+    func testTallPillSqueezedBetweenBothEndsIsClamped() {
+        let short = CGRect(x: 0, y: 70, width: 1440, height: 300)
+        let t = CGRect(x: 0, y: 200, width: 36, height: 32) // neither side fits 173 + 6
+        let p = DockGeometry.editPillFrame(anchor: t, x: 0, size: tall, preferBelow: true, in: short)
+        XCTAssertTrue(short.contains(p))
+    }
+
     func testNoRoomAnywhereIsClamped() {
         let tall = CGRect(x: 0, y: 72, width: 48, height: 800)
         let p = pill(tall)

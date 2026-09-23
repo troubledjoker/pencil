@@ -7,7 +7,8 @@ public enum Tool: String, CaseIterable, Sendable {
 
     public var isPersistent: Bool { self != .laser }
 
-    public var lineWidth: CGFloat {
+    /// Width at the default size level (3). The stroke size scales it.
+    public var baseLineWidth: CGFloat {
         switch self {
         case .pen: return 4
         case .highlighter: return 18
@@ -23,12 +24,17 @@ public enum Tool: String, CaseIterable, Sendable {
         }
     }
 
-    /// Extra margin around a stroke's point bounds that its rendering can touch
+    /// Width at a stroke size level (1...7).
+    public func lineWidth(level: Int) -> CGFloat {
+        baseLineWidth * StrokeSize.multiplier(level)
+    }
+
+    /// Extra margin around a stroke of `width` that its rendering can touch
     /// (half the line width, plus the laser glow).
-    public var renderPadding: CGFloat {
+    public func renderPadding(width: CGFloat) -> CGFloat {
         switch self {
-        case .laser: return 12
-        default: return lineWidth / 2 + 2
+        case .laser: return max(12, width * 1.75 + 2) // the glow is 3.5× wide
+        default: return width / 2 + 2
         }
     }
 
@@ -39,6 +45,49 @@ public enum Tool: String, CaseIterable, Sendable {
         case .laser: return "Laser"
         }
     }
+}
+
+/// One stroke size shared by every tool: a level from 1 to 7 that scales each tool's
+/// base width, so the highlighter stays proportionally thicker than the pen.
+public enum StrokeSize {
+    public static let levels: ClosedRange<Int> = 1...7
+    public static let defaultLevel = 3
+    /// Width multiplier per level (index 0 = level 1). Level 3 is today's widths.
+    public static let multipliers: [CGFloat] = [0.5, 0.7, 1.0, 1.4, 1.9, 2.6, 3.4]
+
+    public static func clamp(_ level: Int) -> Int { min(max(level, levels.lowerBound), levels.upperBound) }
+
+    public static func multiplier(_ level: Int) -> CGFloat { multipliers[clamp(level) - 1] }
+}
+
+/// The current stroke size level, persisted in UserDefaults.
+public final class StrokeSizeSetting {
+    public static let defaultsKey = "ink.sizeLevel"
+
+    private let defaults: UserDefaults
+    public private(set) var level: Int
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let stored = defaults.object(forKey: Self.defaultsKey) as? Int
+        level = StrokeSize.clamp(stored ?? StrokeSize.defaultLevel)
+    }
+
+    /// Sets the level (clamped). Returns true if it changed.
+    @discardableResult
+    public func set(_ newLevel: Int) -> Bool {
+        let clamped = StrokeSize.clamp(newLevel)
+        guard clamped != level else { return false }
+        level = clamped
+        defaults.set(clamped, forKey: Self.defaultsKey)
+        return true
+    }
+
+    /// Steps the level by `delta` (clamped). Returns true if it changed.
+    @discardableResult
+    public func step(by delta: Int) -> Bool { set(level + delta) }
+
+    public func width(for tool: Tool) -> CGFloat { tool.lineWidth(level: level) }
 }
 
 /// The app's overall mode.
@@ -107,22 +156,27 @@ public struct Stroke: Identifiable, Sendable {
     public let id: Int
     public let tool: Tool
     public let color: InkColor
+    /// Fixed when the stroke starts, so changing the size never restyles existing ink.
+    public let lineWidth: CGFloat
     public private(set) var points: [InkPoint]
     /// Bounding box of the points (a midpoint-quadratic curve stays inside it).
     public private(set) var pointBounds: CGRect
 
-    init(id: Int, tool: Tool, color: InkColor, first: InkPoint) {
+    init(id: Int, tool: Tool, color: InkColor, lineWidth: CGFloat, first: InkPoint) {
         self.id = id
         self.tool = tool
         self.color = color
+        self.lineWidth = lineWidth
         self.points = [first]
         self.pointBounds = CGRect(origin: first.location, size: .zero)
     }
 
     /// Area the rendered stroke can touch.
     public var renderBounds: CGRect {
-        pointBounds.insetBy(dx: -tool.renderPadding, dy: -tool.renderPadding)
+        pointBounds.insetBy(dx: -renderPadding, dy: -renderPadding)
     }
+
+    public var renderPadding: CGFloat { tool.renderPadding(width: lineWidth) }
 
     mutating func append(_ p: InkPoint) {
         points.append(p)
@@ -188,9 +242,11 @@ public final class InkStore {
     }
 
     @discardableResult
-    public func begin(tool: Tool, color: InkColor, at location: CGPoint, time: TimeInterval) -> CGRect? {
+    public func begin(tool: Tool, color: InkColor, width: CGFloat? = nil, at location: CGPoint,
+                      time: TimeInterval) -> CGRect? {
         let dirty = end()
-        let stroke = Stroke(id: nextID, tool: tool, color: color, first: InkPoint(location, time: time))
+        let stroke = Stroke(id: nextID, tool: tool, color: color, lineWidth: width ?? tool.baseLineWidth,
+                            first: InkPoint(location, time: time))
         nextID += 1
         current = stroke
         return union(dirty, stroke.renderBounds)
@@ -209,7 +265,7 @@ public final class InkStore {
         let tail = stroke.points.suffix(3).map(\.location)
         var r = CGRect(origin: tail[tail.startIndex], size: .zero)
         for p in tail { r = r.union(CGRect(origin: p, size: .zero)) }
-        return r.insetBy(dx: -stroke.tool.renderPadding, dy: -stroke.tool.renderPadding)
+        return r.insetBy(dx: -stroke.renderPadding, dy: -stroke.renderPadding)
     }
 
     /// Finishes the in-progress stroke, if any.

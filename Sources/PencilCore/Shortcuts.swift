@@ -19,7 +19,7 @@ public enum Shortcuts {
     /// no two share a combo and every `Feature` has one.
     public enum Global: CaseIterable, Sendable {
         // Draw
-        case laser, pen, highlighter, off
+        case laser, pen, highlighter, off, bigger, smaller
         // Edit
         case undo, clear
         // Capture
@@ -41,6 +41,8 @@ public enum Shortcuts {
             case .highlighter: return 26    // 7
             case .toggleDock: return 25     // 9
             case .off: return 29            // 0
+            case .bigger: return 30         // ]
+            case .smaller: return 33        // [
             case .undo: return 6            // Z
             case .clear: return 7           // X
             case .shortcuts: return 44      // /
@@ -68,6 +70,8 @@ public enum Shortcuts {
             case .highlighter: return "⌥7"
             case .toggleDock: return "⌥9"
             case .off: return "⌥0"
+            case .bigger: return "⌥]"
+            case .smaller: return "⌥["
             case .undo: return "⌥Z"
             case .clear: return "⌥X"
             case .shortcuts: return "⌥/"
@@ -83,6 +87,8 @@ public enum Shortcuts {
             case .pen: return "Pen (press again to turn off)"
             case .highlighter: return "Highlighter (press again to turn off)"
             case .off: return "Off: stop drawing and hide the ink"
+            case .bigger: return "Bigger stroke (all tools)"
+            case .smaller: return "Smaller stroke (all tools)"
             case .undo: return "Undo"
             case .clear: return "Clear all ink"
             case .snapshot: return "Snapshot screen, ink included"
@@ -101,8 +107,8 @@ public enum Shortcuts {
     /// Everything the toolbar, the Undo/Clear pill and the menu can do. Each maps to its
     /// global key (exhaustive switch), so a new feature can't ship without one.
     public enum Feature: CaseIterable, Sendable {
-        case laser, pen, highlighter, off, undo, clear, snapshot, region, burst, captureDrawing,
-             record, clipboard, pasteAll, toggleDock, shortcuts
+        case laser, pen, highlighter, off, bigger, smaller, undo, clear, snapshot, region, burst,
+             captureDrawing, record, clipboard, pasteAll, toggleDock, shortcuts
 
         public var global: Global {
             switch self {
@@ -110,6 +116,8 @@ public enum Shortcuts {
             case .pen: return .pen
             case .highlighter: return .highlighter
             case .off: return .off
+            case .bigger: return .bigger
+            case .smaller: return .smaller
             case .undo: return .undo
             case .clear: return .clear
             case .snapshot: return .snapshot
@@ -127,7 +135,7 @@ public enum Shortcuts {
 
     /// The cheat sheet's global sections.
     public static let globalSections: [(title: String, keys: [Global])] = [
-        ("Draw", [.laser, .pen, .highlighter, .off]),
+        ("Draw", [.laser, .pen, .highlighter, .off, .bigger, .smaller]),
         ("Edit", [.undo, .clear]),
         ("Capture", [.snapshot, .region, .burst, .captureDrawing, .record]),
         ("Clipboard", [.clipboard, .pasteAll]),
@@ -178,6 +186,8 @@ public enum Shortcuts {
         case color(index: Int)
         case undo
         case clear
+        /// ] / [: step the stroke size up or down.
+        case size(delta: Int)
         case snapshot
         case region
         /// Esc: stop drawing, keep the ink visible, let clicks through.
@@ -207,6 +217,8 @@ public enum Shortcuts {
         case "l": return .tool(.laser)
         case "z": return .undo
         case "x": return .clear
+        case "]": return .size(delta: 1)
+        case "[": return .size(delta: -1)
         case "s": return .snapshot
         case "a": return .region
         case let s? where s.count == 1:
@@ -232,6 +244,7 @@ public enum Shortcuts {
         ("1 – 5", "Red · Yellow · Green · Blue · White"),
         ("Z  or  ⌘Z", "Undo"),
         ("X", "Clear all"),
+        ("]  [", "Bigger · Smaller stroke"),
         ("⏎", "Capture the drawing (cropped to the ink)"),
         ("S", "Snapshot screen"),
         ("A", "Region capture"),

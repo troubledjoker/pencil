@@ -32,7 +32,7 @@ final class DockController {
     private var lastMode: Mode?
 
     private(set) var isExpanded = false
-    /// Floating Undo / Clear, shown only while there's ink (collapsed or open).
+    /// Floating pill: stroke size while drawing, Undo / Clear while drawing or there's ink.
     private let editPill = EditPill()
     private var hovering = false
     private var draggingTile = false
@@ -42,7 +42,7 @@ final class DockController {
     private var tileIsOut = false
     private var restWork: DispatchWorkItem?
     /// How much of the tile hides past the screen edge at rest.
-    private static let peekHidden: CGFloat = 18
+    private static let peekHidden: CGFloat = 9
     private static let peekDuration: CFTimeInterval = 0.18
     private static let restDelay: TimeInterval = 0
     /// Bumped on every transition so a stale completion never undoes a newer one.
@@ -129,6 +129,7 @@ final class DockController {
         buildToolbar()
         editPill.onUndo = { [weak self] in self?.controller.undo() }
         editPill.onClear = { [weak self] in self?.controller.clear() }
+        editPill.onSize = { [weak self] delta in self?.controller.changeSize(by: delta, announce: false) }
         flyout.companion = panel
         flyout.onPick = { [weak self] color in
             self?.controller.setColor(color)
@@ -536,10 +537,13 @@ final class DockController {
 
     // MARK: Undo / Clear pill
 
-    /// Shows the pill while there's persistent ink, placed past the dock's far end (below
-    /// the tile when collapsed; opposite the handle when open), and moves it with the dock.
+    /// Shows the pill while a drawing tool is active (with the size section) or there's
+    /// persistent ink, placed past the dock's far end (below the tile when collapsed;
+    /// opposite the handle when open), and moves it with the dock.
     private func updateEditPill(duration: CFTimeInterval) {
-        guard controller.store.hasPersistentInk else {
+        let drawingTool = controller.mode.tool
+        let hasInk = controller.store.hasPersistentInk
+        guard drawingTool != nil || hasInk else {
             editPill.hide(duration: duration == 0 ? 0 : 0.18)
             return
         }
@@ -557,8 +561,18 @@ final class DockController {
                             width: Self.tileSize.width, height: Self.tileSize.height)
             preferBelow = true
         }
-        let frame = DockGeometry.editPillFrame(anchor: anchor, x: s.frame.minX, size: EditPill.size,
+        let size = DockGeometry.editPillSize(showingSize: drawingTool != nil)
+        let frame = DockGeometry.editPillFrame(anchor: anchor, x: s.frame.minX, size: size,
                                                preferBelow: preferBelow, in: s.visibleFrame)
+        if let drawingTool {
+            let level = controller.strokeSize.level
+            editPill.configure(size: .init(level: level, width: controller.strokeSize.width(for: drawingTool),
+                                           color: controller.color,
+                                           onTop: DockGeometry.sizeSectionOnTop(pill: frame, in: s.visibleFrame)),
+                               hasInk: hasInk)
+        } else {
+            editPill.configure(size: nil, hasInk: hasInk)
+        }
         editPill.show(at: frame, duration: duration)
     }
 
@@ -1338,25 +1352,105 @@ final class PillBorder: NSView {
 
 // MARK: - Undo / Clear pill
 
-/// A small floating pill on the screen edge with Undo and Clear, shown only while there's
-/// ink. Same dark look as the toolbar: square and borderless on the edge side, rounded
-/// outer corners, window shadow that follows the shape. Its own non-activating panel at
-/// the dock's level (above the ink, and left out of captures as a Pencil window).
+/// The size section's preview: a dot as wide as the stroke will be, in the ink color.
+/// Scrolling over it changes the size.
+final class SizePreviewDot: DragSurface {
+    var onStep: ((Int) -> Void)?
+    var state: EditPill.SizeState? {
+        didSet {
+            guard state != oldValue else { return }
+            needsDisplay = true
+            if let state {
+                hint = "Size \(state.level) of \(StrokeSize.levels.upperBound)"
+                setAccessibilityLabel(hint)
+            }
+        }
+    }
+    private var scrollAccumulator: CGFloat = 0
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 36, height: 34))
+        setAccessibilityRole(.valueIndicator)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Trackpads send many small deltas; step once per ~a notch's worth.
+        let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 12 : event.scrollingDeltaY
+        // Physical direction: wheel or fingers up = bigger, whatever "natural scrolling" says.
+        let up = event.isDirectionInvertedFromDevice ? -dy : dy
+        if event.phase == .began { scrollAccumulator = 0 }
+        scrollAccumulator += up
+        while abs(scrollAccumulator) >= 1 {
+            let step = scrollAccumulator > 0 ? 1 : -1
+            scrollAccumulator -= CGFloat(step)
+            onStep?(step)
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let state else { return }
+        // The actual stroke width, capped to what fits in the pill.
+        let d = min(state.width, bounds.height - 4, bounds.width - 6)
+        let r = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        nsColor(state.color).setFill()
+        NSBezierPath(ovalIn: r).fill()
+        if d > 4 {
+            NSColor.white.withAlphaComponent(0.35).setStroke()
+            let ring = NSBezierPath(ovalIn: r.insetBy(dx: 0.5, dy: 0.5))
+            ring.lineWidth = 0.75
+            ring.stroke()
+        }
+    }
+}
+
+/// A hairline between the size section and Undo / Clear.
+final class PillDivider: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.withAlphaComponent(0.16).setFill()
+        NSRect(x: 0, y: bounds.midY - 0.5, width: bounds.width, height: 1).fill()
+    }
+}
+
+/// A small floating pill on the screen edge. While a drawing tool is active it has a size
+/// section (+, a live preview dot, −) above or below Undo / Clear; otherwise it shows only
+/// while there's ink, with just Undo and Clear. Same dark look as the toolbar: square and
+/// borderless on the edge side, rounded outer corners, window shadow that follows the shape.
+/// Its own non-activating panel at the dock's level (above the ink, and left out of
+/// captures as a Pencil window).
 @MainActor
 final class EditPill {
-    static let size = NSSize(width: 36, height: 66)
+    struct SizeState: Equatable {
+        var level: Int
+        var width: CGFloat
+        var color: InkColor
+        /// Size section at the top of the pill (else at the bottom).
+        var onTop: Bool
+    }
 
     var onUndo: (() -> Void)?
     var onClear: (() -> Void)?
+    /// +1 / −1 from the size buttons or the scroll wheel over the dot.
+    var onSize: ((Int) -> Void)?
 
     private let panel: DockPanel
+    private let undo: DockButton
+    private let clear: DockButton
+    private let bigger: DockButton
+    private let smaller: DockButton
+    private let dot = SizePreviewDot()
+    private let divider = PillDivider()
     private var isShown = false
     private var generation = 0
     /// How far it slides out of the edge when appearing.
     private static let slide: CGFloat = 10
 
     init() {
-        let size = Self.size
+        let size = DockGeometry.editPillSize(showingSize: false)
         panel = DockPanel(contentRect: NSRect(origin: .zero, size: size))
         panel.hasShadow = true
 
@@ -1369,14 +1463,48 @@ final class EditPill {
         effect.autoresizingMask = [.width, .height]
         panel.contentView = effect
 
-        let undo = DockButton(symbol: "arrow.uturn.backward", hint: "Undo  \(Shortcuts.Global.undo.label) · Z")
-        let clear = DockButton(symbol: "trash", hint: "Clear all  \(Shortcuts.Global.clear.label) · X")
+        undo = DockButton(symbol: "arrow.uturn.backward", hint: Shortcuts.hint("Undo", .undo))
+        clear = DockButton(symbol: "trash", hint: Shortcuts.hint("Clear all", .clear))
+        bigger = DockButton(symbol: "plus", hint: Shortcuts.hint("Bigger", .bigger))
+        smaller = DockButton(symbol: "minus", hint: Shortcuts.hint("Smaller", .smaller))
         undo.onClick = { [weak self] in self?.onUndo?() }
         clear.onClick = { [weak self] in self?.onClear?() }
-        undo.frame.origin = NSPoint(x: (size.width - undo.frame.width) / 2, y: size.height - 1 - undo.frame.height)
-        clear.frame.origin = NSPoint(x: (size.width - clear.frame.width) / 2, y: 1)
-        effect.addSubview(undo)
-        effect.addSubview(clear)
+        bigger.onClick = { [weak self] in self?.onSize?(1) }
+        smaller.onClick = { [weak self] in self?.onSize?(-1) }
+        dot.onStep = { [weak self] delta in self?.onSize?(delta) }
+        for v in [undo, clear, bigger, smaller, dot, divider] as [NSView] { effect.addSubview(v) }
+        configure(size: nil, hasInk: true)
+    }
+
+    /// Lays out the controls for the next frame: with the size section (`size` non-nil)
+    /// or Undo / Clear only. Undo / Clear dim when there's no ink to act on.
+    func configure(size: SizeState?, hasInk: Bool) {
+        let w = DockGeometry.editPillWidth
+        let showSize = size != nil
+        for v in [bigger, smaller, dot, divider] as [NSView] { v.isHidden = !showSize }
+        undo.alphaValue = hasInk ? 1 : 0.35
+        clear.alphaValue = hasInk ? 1 : 0.35
+        func center(_ v: NSView, y: CGFloat, height: CGFloat) {
+            v.frame = NSRect(x: (w - v.frame.width) / 2, y: y, width: v.frame.width, height: height)
+        }
+        let edit = DockGeometry.editPillHeight
+        let sizeHeight = DockGeometry.editPillSizeSectionHeight
+        // Undo / Clear keep their spacing (1pt from the pill's ends) inside their block.
+        let editBase: CGFloat = (size?.onTop ?? false) ? 0 : (showSize ? sizeHeight : 0)
+        center(clear, y: editBase + 1, height: 32)
+        center(undo, y: editBase + edit - 1 - 32, height: 32)
+        guard let size else { return }
+        let sizeBase: CGFloat = size.onTop ? edit : 0
+        // Top to bottom: +, dot, −, then the divider on the side facing Undo / Clear.
+        let dividerY = size.onTop ? sizeBase : sizeBase + sizeHeight - 9
+        let controlsBase = size.onTop ? sizeBase + 9 : sizeBase
+        center(smaller, y: controlsBase, height: 32)
+        dot.frame = NSRect(x: 0, y: controlsBase + 32, width: w, height: 34)
+        center(bigger, y: controlsBase + 66, height: 32)
+        divider.frame = NSRect(x: 8, y: dividerY, width: w - 16, height: 9)
+        dot.state = size
+        bigger.alphaValue = size.level < StrokeSize.levels.upperBound ? 1 : 0.35
+        smaller.alphaValue = size.level > StrokeSize.levels.lowerBound ? 1 : 0.35
     }
 
     /// Shows (fade + slide out of the edge) or moves it to `frame`.

@@ -18,7 +18,7 @@ final class ShortcutTests: XCTestCase {
 
     func testGlobalDigits() {
         XCTAssertEqual(Shortcuts.Global.allCases.map(\.label),
-                       ["⌥1", "⌥2", "⌥7", "⌥0", "⌥Z", "⌥X", "⌥3", "⌥4", "⇧⌥4", "⌥6", "⌥5",
+                       ["⌥1", "⌥2", "⌥7", "⌥0", "⌥]", "⌥[", "⌥Z", "⌥X", "⌥3", "⌥4", "⇧⌥4", "⌥6", "⌥5",
                         "⌃⌘V", "⌥⇧V", "⌥9", "⌥/"])
         XCTAssertEqual(Shortcuts.Global.burst.keyCode, Shortcuts.Global.region.keyCode)
         XCTAssertEqual(Shortcuts.Global.pasteAll.modifiers, Shortcuts.Mods.option | Shortcuts.Mods.shift)
@@ -38,6 +38,8 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(cmd("z"), .undo)
         XCTAssertEqual(cmd("z", command: true), .undo)
         XCTAssertEqual(cmd("x"), .clear)
+        XCTAssertEqual(cmd("]"), .size(delta: 1))
+        XCTAssertEqual(cmd("["), .size(delta: -1))
         XCTAssertEqual(cmd("s"), .snapshot)
         XCTAssertEqual(cmd("a"), .region)
         XCTAssertEqual(cmd("/", typed: "?"), .help)
@@ -50,6 +52,7 @@ final class ShortcutTests: XCTestCase {
         XCTAssertNil(cmd("p", command: true), "⌘P isn't Pen")
         XCTAssertNil(cmd("x", control: true))
         XCTAssertNil(cmd("s", option: true))
+        XCTAssertNil(cmd("]", option: true), "⌥] is the global key, not the in-draw one")
         XCTAssertNil(cmd("q"))
     }
 
@@ -87,7 +90,7 @@ final class ShortcutTests: XCTestCase {
     /// (exhaustive switch); reusing one fails here.
     func testEveryFeatureHasItsOwnGlobalKey() {
         let expected: [Shortcuts.Feature: String] = [
-            .laser: "⌥1", .pen: "⌥2", .highlighter: "⌥7", .off: "⌥0",
+            .laser: "⌥1", .pen: "⌥2", .highlighter: "⌥7", .off: "⌥0", .bigger: "⌥]", .smaller: "⌥[",
             .undo: "⌥Z", .clear: "⌥X",
             .snapshot: "⌥3", .region: "⌥4", .burst: "⇧⌥4", .captureDrawing: "⌥6", .record: "⌥5",
             .clipboard: "⌃⌘V", .pasteAll: "⌥⇧V",
@@ -101,6 +104,14 @@ final class ShortcutTests: XCTestCase {
         XCTAssertEqual(Set(globals.map(\.label)).count, globals.count, "two features share a global key")
         XCTAssertEqual(Set(Shortcuts.Global.allCases.map(\.label)), Set(globals.map(\.label)),
                        "every global key belongs to a feature")
+    }
+
+    func testSizeKeys() {
+        XCTAssertEqual(Shortcuts.Global.bigger.keyCode, 30)  // kVK_ANSI_RightBracket
+        XCTAssertEqual(Shortcuts.Global.smaller.keyCode, 33) // kVK_ANSI_LeftBracket
+        XCTAssertEqual(Shortcuts.Global.bigger.modifiers, Shortcuts.Mods.option)
+        XCTAssertEqual(Shortcuts.globalSections.first?.keys, [.laser, .pen, .highlighter, .off, .bigger, .smaller])
+        XCTAssertTrue(Shortcuts.drawingRows.contains { $0.0.contains("]") && $0.0.contains("[") })
     }
 
     func testCheatSheetSectionsCoverEveryGlobalOnce() {
