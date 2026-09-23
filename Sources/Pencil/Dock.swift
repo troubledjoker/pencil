@@ -891,6 +891,23 @@ final class DockPanel: NSPanel {
     // Never take key focus away from the user's app.
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    // Cursor: the panel is never key, so it tracks the mouse itself (see `PencilCursor`).
+    override var contentView: NSView? {
+        didSet { if let contentView { PencilCursor.track(contentView) } }
+    }
+
+    // It may appear or vanish under a still mouse, which sends no tracking events.
+    override func orderOut(_ sender: Any?) {
+        let f = frame
+        super.orderOut(sender)
+        PencilCursor.updateSoon(ifMouseIn: f)
+    }
+
+    override func orderFrontRegardless() {
+        super.orderFrontRegardless()
+        PencilCursor.updateSoon(ifMouseIn: frame)
+    }
 }
 
 // MARK: - Controls
@@ -898,7 +915,7 @@ final class DockPanel: NSPanel {
 /// Base for every dock control: tells a click from a drag using a small movement
 /// threshold (reporting global mouse locations), tracks hover, and shows a custom
 /// hint (standard tooltips don't appear for a non-activating panel of a background app).
-class DragSurface: NSView {
+class DragSurface: NSView, PointerCursorProviding {
     var onClick: (() -> Void)?
     var onDrag: ((_ start: NSPoint, _ now: NSPoint) -> Void)?
     var onDragEnd: (() -> Void)?
@@ -909,6 +926,9 @@ class DragSurface: NSView {
     var trackingRect: NSRect { bounds }
     private(set) var isHovering = false
 
+    /// Every dock control is clickable; override for a different cursor.
+    var pointerCursor: NSCursor { .pointingHand }
+
     private var downPoint: NSPoint?
     private var dragging = false
     private var hoverArea: NSTrackingArea?
@@ -918,13 +938,25 @@ class DragSurface: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: trackingRect, options: [.activeAlways, .mouseEnteredAndExited],
+        let area = NSTrackingArea(rect: trackingRect,
+                                  options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate,
+                                            .activeAlways, .inVisibleRect],
                                   owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
+    override func cursorUpdate(with event: NSEvent) { PencilCursor.update() }
+    override func mouseMoved(with event: NSEvent) { PencilCursor.update() }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        if isHovering { isHovering = false; hoverChanged(false) }
+        PencilCursor.updateSoon()
+    }
+
     override func mouseEntered(with event: NSEvent) {
+        PencilCursor.update()
         isHovering = true
         hoverChanged(true)
         if let hint, let window {
@@ -937,6 +969,7 @@ class DragSurface: NSView {
         isHovering = false
         hoverChanged(false)
         HintCenter.shared.cancel(owner: self)
+        PencilCursor.update()
     }
 
     /// Subclasses react to hover here.
@@ -955,6 +988,7 @@ class DragSurface: NSView {
         if !dragging, DockGeometry.isDrag(from: start, to: now), onDrag != nil {
             dragging = true
             pressChanged(false)
+            PencilCursor.beginPress(.closedHand)
         }
         if dragging { onDrag?(start, now) }
     }
@@ -964,6 +998,7 @@ class DragSurface: NSView {
         pressChanged(false)
         if dragging {
             onDragEnd?()
+            PencilCursor.endPress()
         } else if bounds.contains(convert(event.locationInWindow, from: nil)) {
             onClick?()
         }
@@ -1438,7 +1473,8 @@ final class SizePreviewDot: DragSurface {
 /// The slider's face: a wedge (thin → thick, in the ink color) with faint ticks at the
 /// 7 levels and a knob as wide as the stroke. Press and drag, or click, to pick a level;
 /// the scroll wheel steps it.
-final class SizeSliderView: NSView {
+final class SizeSliderView: NSView, PointerCursorProviding {
+    var pointerCursor: NSCursor { .pointingHand }
     var state: EditPill.SizeState? { didSet { if state != oldValue { needsDisplay = true; updateAccessibility() } } }
     var onLevel: ((Int) -> Void)?
     var onStep: ((Int) -> Void)?
@@ -1467,17 +1503,23 @@ final class SizeSliderView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseEnteredAndExited], owner: self)
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate,
+                                            .activeAlways, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseEntered(with event: NSEvent) { PencilCursor.update(); onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false); PencilCursor.update() }
+    override func mouseMoved(with event: NSEvent) { PencilCursor.update() }
+    override func cursorUpdate(with event: NSEvent) { PencilCursor.update() }
 
     override func mouseDown(with event: NSEvent) {
         HintCenter.shared.hide()
         isPressed = true
+        PencilCursor.beginPress(.closedHand)
         pick(event)
     }
 
@@ -1486,6 +1528,7 @@ final class SizeSliderView: NSView {
     override func mouseUp(with event: NSEvent) {
         pick(event)
         isPressed = false
+        PencilCursor.endPress()
         onPressEnd?()
     }
 

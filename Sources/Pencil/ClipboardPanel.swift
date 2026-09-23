@@ -969,6 +969,23 @@ final class ClipboardPanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    // Cursor: usually not key, so it tracks the mouse itself (see `PencilCursor`).
+    override var contentView: NSView? {
+        didSet { if let contentView { PencilCursor.track(contentView) } }
+    }
+
+    // It may appear or vanish under a still mouse, which sends no tracking events.
+    override func orderOut(_ sender: Any?) {
+        let f = frame
+        super.orderOut(sender)
+        PencilCursor.updateSoon(ifMouseIn: f)
+    }
+
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        super.makeKeyAndOrderFront(sender)
+        PencilCursor.updateSoon(ifMouseIn: frame)
+    }
+
     override func cancelOperation(_ sender: Any?) { onEscape?() }
 
     /// Pencil has no Edit menu, so the usual text shortcuts are routed by hand for the filter field.

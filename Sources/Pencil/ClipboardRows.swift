@@ -49,7 +49,8 @@ enum ClipboardStyle {
 
 /// A small borderless icon button for the row actions and the sidebar header, with an
 /// optional hover hint (standard tooltips don't show for a non-activating panel).
-final class ClipboardIconButton: NSButton {
+final class ClipboardIconButton: NSButton, PointerCursorProviding {
+    var pointerCursor: NSCursor { .pointingHand }
     var onClick: (() -> Void)?
     var hint: String?
     private var hoverArea: NSTrackingArea?
@@ -84,12 +85,19 @@ final class ClipboardIconButton: NSButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseEnteredAndExited], owner: self)
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate,
+                                            .activeAlways, .inVisibleRect],
+                                  owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
+    override func mouseMoved(with event: NSEvent) { PencilCursor.update() }
+    override func cursorUpdate(with event: NSEvent) { PencilCursor.update() }
+
     override func mouseEntered(with event: NSEvent) {
+        PencilCursor.update()
         guard let hint, let window else { return }
         let anchor = window.convertToScreen(convert(bounds, to: nil))
         HintCenter.shared.schedule(hint, anchor: anchor, placement: .below, owner: self)
@@ -97,11 +105,13 @@ final class ClipboardIconButton: NSButton {
 
     override func mouseExited(with event: NSEvent) {
         HintCenter.shared.cancel(owner: self)
+        PencilCursor.update()
     }
 }
 
 /// A small text button ("Clear…", "Cancel", "Clear") matching the dark panel.
-final class ClipboardTextButton: NSButton {
+final class ClipboardTextButton: NSButton, PointerCursorProviding {
+    var pointerCursor: NSCursor { .pointingHand }
     var onClick: (() -> Void)?
 
     init(_ title: String, destructive: Bool = false) {
@@ -136,7 +146,8 @@ final class ClipboardTextButton: NSButton {
 // MARK: - Row
 
 /// Selection and hover backgrounds as soft rounded rects (not the system blue bar).
-final class ClipboardRowView: NSTableRowView {
+final class ClipboardRowView: NSTableRowView, PointerCursorProviding {
+    var pointerCursor: NSCursor { .pointingHand }
     var onHover: ((Bool) -> Void)?
     private var hoverArea: NSTrackingArea?
     private(set) var isHovered = false {
@@ -149,20 +160,27 @@ final class ClipboardRowView: NSTableRowView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate,
+                                            .activeAlways, .inVisibleRect],
                                   owner: self)
         addTrackingArea(area)
         hoverArea = area
     }
 
+    override func mouseMoved(with event: NSEvent) { PencilCursor.update() }
+    override func cursorUpdate(with event: NSEvent) { PencilCursor.update() }
+
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         onHover?(true)
+        PencilCursor.update()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         onHover?(false)
+        PencilCursor.update()
     }
 
     func resetHover() {

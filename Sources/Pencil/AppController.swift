@@ -57,6 +57,7 @@ final class AppController {
         case .off:
             overlays.forEach { $0.orderOut(nil) }
             restoreFocus()
+            PencilCursor.updateSoon()
         case .passThrough:
             let hadKey = overlays.contains(where: \.isKeyWindow)
             for w in overlays {
@@ -67,6 +68,7 @@ final class AppController {
                 w.invalidateCursorRects(for: w.overlayView)
             }
             if hadKey { restoreFocus() }
+            PencilCursor.updateSoon()
         case .draw:
             if previousApp == nil {
                 let front = NSWorkspace.shared.frontmostApplication
@@ -82,7 +84,8 @@ final class AppController {
             let target = overlayUnderMouse() ?? overlays.first
             target?.makeKeyAndOrderFront(nil)
             target?.makeFirstResponder(target?.overlayView)
-            NSCursor.crosshair.set()
+            PencilCursor.update()
+            PencilCursor.updateSoon()
         }
         invalidate(nil)
     }

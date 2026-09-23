@@ -78,12 +78,11 @@ final class OverlayView: NSView {
 
     // MARK: Cursor
 
-    override func resetCursorRects() {
-        if controller?.mode.isDrawing == true {
-            addCursorRect(bounds, cursor: .crosshair)
-        }
-    }
+    var isDrawing: Bool { controller?.mode.isDrawing == true }
 
+    // No cursor rects: the overlay is key while drawing, and its rects would keep the
+    // crosshair over Pencil's own panels above it. `PencilCursor` checks what is really
+    // under the mouse instead (crosshair here, a hand over controls).
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
@@ -93,12 +92,12 @@ final class OverlayView: NSView {
                                        owner: self))
     }
 
-    override func cursorUpdate(with event: NSEvent) { updateCursor() }
-    override func mouseEntered(with event: NSEvent) { updateCursor() }
-    override func mouseMoved(with event: NSEvent) { updateCursor() }
+    override func cursorUpdate(with event: NSEvent) { PencilCursor.update() }
+    override func mouseEntered(with event: NSEvent) { PencilCursor.update() }
+    override func mouseMoved(with event: NSEvent) { PencilCursor.update() }
 
     private func updateCursor() {
-        if controller?.mode.isDrawing == true { NSCursor.crosshair.set() }
+        if isDrawing { NSCursor.crosshair.set() }
     }
 
     // MARK: Mouse
