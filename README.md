@@ -3,6 +3,14 @@
 Draw on top of everything on screen, snapshot it with the drawing, and paste it into
 Claude Code. It's a small native macOS app (Swift + AppKit, macOS 14+).
 
+## Quitting
+
+- **Quit:** click the Pencil icon in the menu bar → **Quit Pencil**. Or from a terminal:
+  `pkill -x Pencil`.
+- **Stop it starting at login:** menu bar icon → uncheck **Start at login** (or System
+  Settings → General → Login Items).
+- **Start it again:** `open build/Pencil.app`, or find Pencil in Spotlight.
+
 ## Cheat sheet
 
 Every feature has a global key (they work from any app, with the dock collapsed):
