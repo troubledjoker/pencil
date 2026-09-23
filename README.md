@@ -1,237 +1,306 @@
-# Pencil
+<p align="center">
+  <img src="Resources/icon-preview.png" width="128" alt="Pencil icon">
+</p>
 
-Draw on top of everything on screen, snapshot it with the drawing, and paste it into
-Claude Code. It's a small native macOS app (Swift + AppKit, macOS 14+).
+<h1 align="center">Pencil</h1>
 
-## Quitting
+<p align="center">
+  Draw on top of anything on your screen, snapshot it with the drawing, and paste it into Claude Code.<br>
+  A small native macOS app (Swift + AppKit, macOS 14+).
+</p>
 
-- **Quit:** press **⌥Q**, click the toolbar's **Quit** button (the power icon at the
-  bottom), or click the Pencil icon in the menu bar → **Quit Pencil** (⌘Q while the menu is
-  open). Each asks first in a small "Quit Pencil?" panel: **Return** or **Quit** quits, **Esc**,
-  **Cancel** or a click outside keeps Pencil running. Quitting clears what's drawn on screen;
-  clipboard history and captures are kept. If a screen recording is running, it's stopped
-  and saved first. From a terminal, `pkill -x Pencil` quits without asking.
-- **Stop it starting at login:** menu bar icon → uncheck **Start at login** (or System
-  Settings → General → Login Items).
-- **Start it again:** `open build/Pencil.app`, or find Pencil in Spotlight.
+---
 
-## Cheat sheet
+## 📑 Contents
 
-Every feature has a global key (they work from any app, with the dock collapsed):
+- [🚀 Install](#-install)
+- [🔐 Permissions](#-permissions)
+- [🩹 Troubleshooting](#-troubleshooting)
+- [⌨️ Cheat sheet](#️-cheat-sheet)
+- [✏️ Drawing](#️-drawing)
+- [📸 Snapshots](#-snapshots)
+- [🎥 Screen recording](#-screen-recording)
+- [📋 Clipboard history](#-clipboard-history)
+- [🧭 Toolbar and menu bar](#-toolbar-and-menu-bar)
+- [🛑 Quitting and login](#-quitting-and-login)
+- [🛠️ Development](#️-development)
 
-| Draw | |
+---
+
+## 🚀 Install
+
+### On the Mac you build on
+
+You need Xcode or the Xcode Command Line Tools (`xcode-select --install`).
+
+```sh
+git clone git@github.com:troubledjoker/pencil.git
+cd pencil
+
+scripts/make-signing-identity.sh    # once per Mac: keeps the permission working across rebuilds
+scripts/bundle.sh                   # builds and signs build/Pencil.app
+
+cp -R build/Pencil.app /Applications/
+open /Applications/Pencil.app
+```
+
+Then do the one-time [Screen Recording permission](#-permissions). That's it.
+
+> [!TIP]
+> Skipping `make-signing-identity.sh` still works, but every rebuild gets a new signature
+> and macOS asks for the permission again.
+
+### On another Mac (copying the app)
+
+1. Copy `Pencil.app` to the other Mac (AirDrop, USB, zip).
+2. Drag it into **/Applications**.
+3. Open it **from /Applications**. The first time, right-click → **Open** → **Open**
+   (it isn't notarized, so a plain double-click gets blocked).
+4. Do the [Screen Recording permission](#-permissions).
+
+> [!IMPORTANT]
+> Don't run Pencil straight from Downloads or the AirDrop folder. macOS runs it from a
+> hidden temporary copy and the permission **never sticks**. Pencil warns you when this
+> happens.
+
+### Updating
+
+Quit Pencil (⌥Q), `git pull`, run `scripts/bundle.sh`, copy it to /Applications again, open it.
+
+---
+
+## 🔐 Permissions
+
+### Screen Recording (required for snapshots and recordings)
+
+1. Take a snapshot (**⌥3**). macOS asks for permission.
+2. Open **System Settings → Privacy & Security → Screen Recording**
+   (or Pencil's menu bar icon → **Open Screen Recording settings**).
+3. Turn **Pencil** on.
+4. Pencil menu → **Relaunch Pencil**. macOS only applies the permission after a relaunch.
+
+### Accessibility (optional)
+
+Only needed for **⌥⇧V**, which pastes a burst one image at a time.
+**System Settings → Privacy & Security → Accessibility → Pencil**
+(or the menu's **Open Accessibility settings**).
+
+---
+
+## 🩹 Troubleshooting
+
+| Problem | Fix |
 | --- | --- |
-| **⌥1** | Laser. Press again to turn it off |
-| **⌥2** | Pen. Press again to turn it off |
-| **⌥7** | Highlighter. Press again to turn it off |
+| 🔴 **Pencil is switched on in Screen Recording but still says "Allow Pencil"** | The switch belongs to an older build, and toggling it doesn't fix that. Pencil menu → **Reset Screen Recording permission**, switch Pencil on in the list that opens, then **Relaunch Pencil**. |
+| 🔴 **Toast says "Move Pencil to Applications"** | It's running from Downloads or AirDrop. Move it to /Applications and open it from there. If that still doesn't work: `xattr -dr com.apple.quarantine /Applications/Pencil.app` |
+| ⚠️ **Permission gone after every rebuild** | Run `scripts/make-signing-identity.sh` once, then `scripts/bundle.sh` again. |
+| ⚠️ **"Pencil can't be opened" on first launch** | Right-click the app → **Open** → **Open**. |
+| ⚠️ **A shortcut does nothing** | Another app or a macOS shortcut owns it. Pencil tells you which one, once, in a toast. |
+
+Still stuck? This shows what Pencil logged about the permission:
+
+```sh
+log show --last 5m --predicate 'process == "Pencil"' | grep "Screen Recording"
+```
+
+The manual reset, same as the menu item: `tccutil reset ScreenCapture com.haim.pencil`
+
+---
+
+## ⌨️ Cheat sheet
+
+Every global key works from any app, even with the toolbar collapsed.
+
+#### ✏️ Draw
+
+| Key | Action |
+| --- | --- |
+| **⌥1** | Laser (press again to turn off) |
+| **⌥2** | Pen (press again to turn off) |
+| **⌥7** | Highlighter (press again to turn off) |
 | **⌥0** | Off: stop drawing and hide the ink |
-| **⌥]** / **⌥[** | Bigger / smaller stroke (one size for every tool) |
-
-| Edit | |
-| --- | --- |
+| **⌥]** / **⌥[** | Bigger / smaller stroke |
 | **⌥Z** | Undo |
 | **⌥X** | Clear all ink |
 
-| Capture | |
-| --- | --- |
-| **⌥3** | Snapshot the screen under the mouse, ink included, to a file and the clipboard |
-| **⌥4** | Region capture to a file and the clipboard |
-| **⇧⌥4** | Burst: capture several regions in a row, Esc when done |
-| **⌥6** | Capture the drawing: cropped to the ink plus some room (whole screen if there's no ink) |
-| **⌥5** | Start / stop a screen recording |
+#### 📸 Capture
 
-| Clipboard | |
+| Key | Action |
+| --- | --- |
+| **⌥3** | Snapshot the screen under the mouse (ink included) |
+| **⌥4** | Capture a region |
+| **⇧⌥4** | Burst: several regions in a row, Esc when done |
+| **⌥6** | Capture the drawing, cropped to the ink |
+| **⌥5** | Start / stop screen recording |
+
+#### 📋 Clipboard and app
+
+| Key | Action |
 | --- | --- |
 | **⌃⌘V** | Clipboard history |
-| **⌥⇧V** | Paste the last burst one by one (for apps that take one image per paste) |
-
-| Pencil | |
-| --- | --- |
+| **⌥⇧V** | Paste the last burst one image at a time |
 | **⌥9** | Open / close the toolbar |
-| **⌥/** | Show the keyboard shortcuts on screen |
+| **⌥/** | Show shortcuts on screen |
 | **⌥Q** | Quit Pencil (asks first) |
 
-| While drawing (no modifier) | |
+#### 🎨 While drawing (no modifier needed)
+
+| Key | Action |
 | --- | --- |
-| **P / H / L** | Pen / Highlighter / Laser |
+| **P** / **H** / **L** | Pen / Highlighter / Laser |
 | **1–5** | Red, yellow, green, blue, white |
 | **Z** or **⌘Z** | Undo |
 | **X** | Clear all |
 | **]** / **[** | Bigger / smaller stroke |
-| **⏎** | Capture the drawing: cropped to the ink plus some room around it, to the clipboard |
-| **S** / **A** | Snapshot screen / Region capture |
+| **⏎** | Capture the drawing to the clipboard |
+| **S** / **A** | Snapshot screen / Capture region |
 | **Esc** | Stop drawing. Ink stays and clicks go through |
-| **?** | Show this cheat sheet |
+| **?** | Show the cheat sheet |
 
-Pencil takes ⌥Z, ⌥X, ⌥/, ⌥] and ⌥[ globally, so those no longer type Ω, ≈, ÷, ‘ and “
-while Pencil runs.
+> [!NOTE]
+> While Pencil runs, ⌥Z, ⌥X, ⌥/, ⌥] and ⌥[ no longer type Ω, ≈, ÷, ‘ and “.
+> If a key is also a macOS shortcut (for example a Screenshots shortcut remapped to ⌥4),
+> Pencil leaves it to macOS and tells you. Change the macOS one to get Pencil's back.
 
-If another app already owns one of these keys, Pencil says which one, once, in a toast. If
-one of them is also a macOS shortcut (for example "Copy picture of selected area to the
-clipboard" remapped to ⌥4 under Keyboard Shortcuts → Screenshots), both would fire, so
-Pencil leaves that key to macOS and says so. Change the macOS one to get Pencil's back.
+---
 
-## Build and run
-
-```sh
-scripts/bundle.sh          # renders the icon, swift build -c release, assembles and signs build/Pencil.app
-open build/Pencil.app
-swift test                 # stroke model, laser fade, dock geometry, capture, shortcuts
-```
-
-The app icon is drawn in code (`Sources/PencilCore/IconArt.swift`, shared with the dock tab).
-`scripts/make-icon.sh` compiles `scripts/make-icon.swift` against it and writes
-`Resources/AppIcon.iconset`, `Resources/AppIcon.icns` and a 1024px `Resources/icon-preview.png`.
-`bundle.sh` runs it, copies the icon into the app, and re-registers the app with
-LaunchServices so Finder and Spotlight show the new icon.
-
-Pencil has no Dock icon. It lives in a **pencil tab on the left edge of the screen**,
-with a small fallback item in the menu bar.
-
-## The edge dock
-
-- Collapsed, it's a small pencil tile (the Pencil icon artwork) peeking mostly out of the left
-  edge. Hover it and it slides all the way out (and back in as soon as you move away). It
-  stays fully out while you draw, record or drag it. The pencil stands upright in it; on hover, while a drawing mode is on, and while the toolbar is open it tips down to the icon's diagonal (and stands back up when it closes). It lifts slightly when you hover it, gets a ring in the current ink color while a drawing mode is on,
-  and a red dot while recording.
-- **Click the pencil** to open the toolbar in place. The pencil stays exactly where it is and
-  becomes the toolbar's handle; the toolbar grows out of it. Collapsing reverses that.
-  The toolbar grows down from it, or up (handle at the bottom, sections reversed) when the
-  tab is too close to the bottom of the screen. It's split into small groups:
-  - **Draw:** Pen, Highlighter, Laser, and the ink-color chip. Click the chip and a pill with the five colors slides out to the right. Picking one sets it and closes the pill. Clicking
-    the chip again, clicking anywhere else, pressing Esc while drawing, or picking a mode
-    also closes it. The active tool's icon takes the ink color.
-  - **Capture:** Snapshot (whole screen), Capture region, Capture drawing, Screen recording
-  - **Clipboard:** opens the clipboard history sidebar (⌃⌘V)
-  - **Off**
-  - **Hide** and **Quit** at the very end: Hide tucks the toolbar back into the pencil tile
-    (the same as clicking the handle or ⌥9); Quit asks before quitting Pencil (⌥Q)
-- The toolbar stays open while you draw, so you can switch color mid-drawing.
-  Click the pencil handle at the top to collapse it. Off turns drawing off and collapses it.
-- **Undo / Clear** live in a small separate pill on the same edge that appears while
-  there's ink on screen or a drawing tool is on, whether the dock is collapsed or open. It
-  sits just below the pencil (or past the far end of the open toolbar), and on the other
-  side when there's no room. It fades away when drawing is off and the ink is cleared.
-  While drawing, **Z** and **X** do the same.
-- **Stroke size:** while a drawing tool is on, the pill also has **+**, a dot showing the
-  actual stroke width in the ink color, and **−** (on the end away from the nearer top or
-  bottom of the screen, divided from Undo / Clear by a hairline). Scroll over the dot to
-  change it too. There are 7 sizes, shared by every tool and remembered; the highlighter
-  stays proportionally thicker than the pen. Ink already drawn keeps its width.
-- **Drag the tab** (or the handle) up or down to move it. It stays locked to the left
-  edge. Drag onto another display to move it there. The position is remembered.
-- Hover any button for a moment to see its name and its global shortcut, if it has one.
-  The single keys you use while drawing are in the cheat sheet (**?**).
-- The dock never takes focus from the app you're working in. Captures and recordings leave
-  Pencil's own UI (dock, clipboard sidebar, hints, toasts) out of the picture without hiding it,
-  so nothing blinks. Your ink is always included.
-
-## Clipboard history
-
-Everything you copy, including every Pencil capture, is kept in a history. Open it with the
-dock's **Clipboard** button, **⌃⌘V**, or **Clipboard history** in the menu. A dark sidebar
-slides in on the right with the current clipboard at the top and your earlier copies below.
-Click one to put it back on the clipboard, or drag it into another app. Search matches text,
-file names, and text inside images (screenshots are OCR'd). Password-manager copies are never
-saved. See [docs/CLIPBOARD.md](docs/CLIPBOARD.md).
-
-## Modes
+## ✏️ Drawing
 
 | Mode | What it does |
 | --- | --- |
-| Off | Ink hidden, clicks go to your apps. Ink is kept and comes back when you draw again, unless you cleared it. |
-| Pen | Solid strokes (4pt at the default size) that stay until cleared. |
-| Highlighter | Thick, 35% opacity, flat-capped strokes that stay until cleared. |
-| Laser | Thin glowing stroke that fades from the tail about 2.5s after each point is drawn. Nothing stays. |
-| Pass-through | Ink stays visible, but clicks go through to your apps. Press Esc while drawing to get here. |
+| **Pen** | Solid strokes that stay until cleared |
+| **Highlighter** | Thick, see-through strokes that stay until cleared |
+| **Laser** | Glowing stroke that fades after about 2.5s |
+| **Pass-through** | Ink stays visible, clicks go to your apps (press **Esc** while drawing) |
+| **Off** | Ink hidden, clicks go to your apps. The ink comes back when you draw again |
 
-## Keyboard
+- **Colors:** keys **1–5**, or the color chip in the toolbar.
+- **Stroke size:** 7 sizes shared by every tool and remembered. Use **⌥]** / **⌥[**, the
+  **+ / −** in the floating pill, or scroll over the size dot. Ink you already drew keeps its width.
+- **Undo / Clear:** a small pill shows up next to the pencil whenever there's ink on screen.
+- Starting a mode with ⌥1 or ⌥2 takes the keyboard right away. **Esc** hands it back to your app.
 
-See the cheat sheet at the top. A drawing mode started from ⌥1 or ⌥2 takes the keyboard
-right away, so the single keys work without a click. Esc or Off hands focus back to the
-app you were typing in. **Keyboard shortcuts…** in the menu (or **?** while drawing) shows
-the cheat sheet on screen.
+---
 
-## Burst capture
+## 📸 Snapshots
 
-Press **⇧⌥4** (or ⇧-click the toolbar's region button, or use the menu) when one message
-needs several screenshots. The picker stays up: drag, it flashes and saves, drag again.
-The pill counts them ("Burst · 3 captured · Esc when done"). ⌥3 snapshots and ⌥5
-recordings made meanwhile join the same burst. **Esc** finishes.
+| How | What you get |
+| --- | --- |
+| **⌥3** | The whole screen under the mouse |
+| **⌥4** | Drag an area; it's captured when you let go. Esc cancels |
+| **⌥6** or **⏎** while drawing | Just the drawing, with some room around it (the whole screen if there's no ink) |
+| **⇧⌥4** | Burst: drag, drag, drag, then **Esc** |
 
-The clipboard holds the whole burst as separate files, so **⌘V** in Finder, Slack, Mail and
-similar apps pastes them all at once. For apps that take one image per paste (many chat
-apps, Claude Code), press **⌥⇧V**: Pencil pastes them one after another into the front app.
-That needs Accessibility permission once (System Settings → Privacy & Security →
-Accessibility → Pencil; the menu has **Open Accessibility settings**). With no burst, ⌥⇧V is
-a normal paste.
+Every snapshot is:
 
-In the clipboard history a burst is one row with a small stack of thumbnails, "Burst · 4
-captures · 12:45". Clicking it puts the whole burst back on the clipboard and opens it; the
-single captures under it stay clickable on their own.
+- 💾 saved to `~/Pictures/Pencil/pencil-YYYYMMDD-HHmmss.png`
+- 📋 copied to the clipboard, with a "Copied" toast
+- 🖊️ taken with your ink in it and Pencil's own toolbar left out
 
-## Capture my drawing
+### Pasting it
 
-Draw, then press **⏎** (or use the toolbar's Capture drawing button, or the menu). Pencil
-crops to the ink on the screen under the mouse, pen and highlighter strokes plus any laser
-still showing, adds 120pt of room on every side, and copies the result like any other
-snapshot. You stay in the same mode with the ink kept. With no ink on that screen it takes
-the whole screen and says so.
+- **Claude Code:** press **Ctrl+V** in the prompt (Ctrl, not ⌘).
+- **Finder, Slack, Mail, browsers, editors:** **⌘V**.
+- **Terminals:** with **Paste images as file paths in terminals** on (in the menu), ⌘V pastes
+  the file's path.
 
-## Screen recording
+### Bursts
 
-Press **⌥5**, or use the record button in the toolbar or the menu. The screen dims a little:
-drag out an area (the size shows by the cursor) and recording starts when you let go, or
-press **Space** for the whole screen under the mouse. **Esc** or a plain click cancels. While recording:
+One message that needs several screenshots:
 
-- A small control at the top of the screen shows the time and a Stop button. A thin red
-  frame marks the area, and the dock's pencil gets a red dot.
-- Drawing keeps working, and the ink and the cursor are in the video. Pencil's own dock,
-  hints, toasts and controls are not.
-- Stop with **⌥5** again or the Stop button. It also stops on its own after 5 minutes.
+1. **⇧⌥4**, then drag out each area. A pill keeps count ("Burst · 3 captured").
+2. **Esc** when done.
+3. **⌘V** pastes them all at once in Finder, Slack and Mail. For apps that take one image
+   per paste (Claude Code, many chat apps), press **⌥⇧V** instead
+   (needs [Accessibility](#accessibility-optional)).
 
-The video is H.264 `.mp4` at 30fps, at the display's full resolution, with no audio. It's
-saved as `~/Pictures/Pencil/pencil-rec-YYYYMMDD-HHmmss.mp4` and copied to the clipboard as
-a file ("Recording copied (0:12)"). Recording needs macOS 15 and the same Screen Recording
-permission as snapshots.
+---
 
-## Snapshots and Claude Code
+## 🎥 Screen recording
 
-⌥3 (whole screen), ⌥4 (region: drag an area and it's captured when you let go; Esc or
-a plain click cancels) and ⏎ while drawing (just the drawing) save `~/Pictures/Pencil/pencil-YYYYMMDD-HHmmss.png`,
-copy it to the clipboard, and show a short "Copied" toast. Your mode doesn't change and
-your ink stays in the picture. Cancelling a region with Esc saves nothing and shows no toast.
+> Needs macOS 15 and the same Screen Recording permission.
 
-The clipboard gets the file and the image (no text), so pasting gives you the picture:
+1. Press **⌥5** (or the record button).
+2. Drag out an area, or press **Space** for the whole screen. Esc cancels.
+3. Record. You can keep drawing, and the ink and cursor show up in the video.
+4. Press **⌥5** again or click **Stop**. It stops on its own after 5 minutes.
 
-- In **Claude Code**, press **Ctrl+V** in the prompt to paste the image (Ctrl+V, not ⌘V).
-- In **Finder, Mail, Slack, chat apps, editors or a browser upload field**, ⌘V pastes the
-  PNG itself. Recordings go on the clipboard as the `.mp4` file.
+The video is saved as `~/Pictures/Pencil/pencil-rec-YYYYMMDD-HHmmss.mp4` (H.264, 30fps,
+no audio) and copied to the clipboard as a file.
 
-**One-time permission:** snapshots need Screen Recording access. Go to System
-Settings → Privacy & Security → Screen Recording (or use **Open Screen Recording
-settings** in Pencil's menu), turn on **Pencil**, then use **Relaunch Pencil** from the menu.
-macOS only picks up the grant after a relaunch.
+---
 
-The grant is tied to the app's signature. Run `scripts/make-signing-identity.sh` once. It
-creates a local "Pencil Local Signing" identity in your login keychain, and `bundle.sh` then
-signs every build with it, so the grant survives rebuilds. Without it, builds are ad-hoc
-signed and each rebuild needs the permission granted again.
+## 📋 Clipboard history
 
-**Switch is on but Pencil still asks?** The switch belongs to an older build with a
-different signature, and toggling it doesn't update it. Use **Reset Screen Recording
-permission** in Pencil's menu (it runs `tccutil reset ScreenCapture com.haim.pencil`),
-turn Pencil on again in the list that opens, then **Relaunch Pencil**.
+Everything you copy, including every Pencil capture, is kept.
 
-**On another Mac:** copy `Pencil.app` into `/Applications` and open it from there. Opened
-straight from Downloads or AirDrop, macOS runs a quarantined copy from a random path
-and the grant never sticks; Pencil says so in its toast. `xattr -dr com.apple.quarantine
-/Applications/Pencil.app` clears the flag if moving it isn't enough.
+- Open it with **⌃⌘V**, the toolbar's **Clipboard** button, or the menu.
+- **Click** a row to copy it again, or **drag** it into another app.
+- **Search** finds text, file names, and text inside screenshots.
+- Copies from password managers are never saved.
 
-## Menu bar
+Full details: [docs/CLIPBOARD.md](docs/CLIPBOARD.md)
 
-The menu bar item is a minimal fallback. It shows the current mode (the icon changes
-with the mode, filled for Pen) and has Laser, Pen, **Snapshot screen**, **Capture region…**,
-**Capture drawing**, **Start / Stop screen recording**, **Keyboard shortcuts…**, the Screen
-Recording helpers, **Start at login** (on by default, set on first launch through
-`SMAppService`), **Open snapshots folder**, and **Quit**.
+---
+
+## 🧭 Toolbar and menu bar
+
+Pencil has no Dock icon. It lives in a **pencil tab on the left edge of the screen**.
+
+- **Hover** the tab and it slides out. **Click** it to open the toolbar.
+- **Drag** it up or down, or onto another display. It remembers where you left it.
+- **Hover** any button to see its name and shortcut.
+- The toolbar never takes focus from the app you're working in.
+
+<details>
+<summary><b>What's in the toolbar</b></summary>
+
+- **Draw:** Pen, Highlighter, Laser, and the color chip (click it for the five colors)
+- **Capture:** Snapshot, Capture region, Capture drawing, Screen recording
+- **Clipboard:** the clipboard history sidebar
+- **Off:** stop drawing and collapse
+- **Hide** and **Quit** at the end
+
+The toolbar opens downward, or upward when the tab is near the bottom of the screen. It
+stays open while you draw, so you can change color mid-drawing. The pencil tab gets a
+ring in the ink color while you're drawing and a red dot while recording.
+
+</details>
+
+<details>
+<summary><b>What's in the menu bar menu</b></summary>
+
+The menu bar icon is a small fallback. It shows the current mode and has the drawing
+modes, every capture, **Keyboard shortcuts…**, the permission helpers (**Open Screen
+Recording settings**, **Reset Screen Recording permission**, **Relaunch Pencil**,
+**Open Accessibility settings**), **Start at login**, **Open snapshots folder**, and **Quit**.
+
+</details>
+
+---
+
+## 🛑 Quitting and login
+
+- **Quit:** **⌥Q**, the toolbar's **Quit** button, or menu bar icon → **Quit Pencil**.
+  Pencil asks first: **Return** quits, **Esc** keeps it running.
+  - Your drawing is cleared. Clipboard history and captures are kept.
+  - A running recording is stopped and saved first.
+  - From a terminal: `pkill -x Pencil` (doesn't ask).
+- **Starts at login** by default. To turn it off, uncheck **Start at login** in the menu bar
+  menu, or use System Settings → General → Login Items.
+- **Start it again:** `open /Applications/Pencil.app`, or find Pencil in Spotlight.
+
+---
+
+## 🛠️ Development
+
+```sh
+scripts/bundle.sh     # icon + release build + signed build/Pencil.app
+swift test            # stroke model, laser fade, dock geometry, capture, shortcuts
+```
+
+- The icon is drawn in code (`Sources/PencilCore/IconArt.swift`). `scripts/make-icon.sh`
+  renders it to `Resources/AppIcon.icns` and `Resources/icon-preview.png`, and
+  `bundle.sh` runs it on every build.
+- The bundle id is `com.haim.pencil`. Builds are signed with the local "Pencil Local
+  Signing" identity when it exists, and ad-hoc otherwise.
