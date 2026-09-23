@@ -58,8 +58,7 @@ enum Snapshotter {
     /// Captures `rect` (AppKit global coordinates) on `screen`.
     static func capture(rect: CGRect, screen: NSScreen, keepWindowNumbers: [Int],
                         completion: @escaping @MainActor (Result<URL, SnapshotError>) -> Void) {
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
+        guard ScreenAccess.isGranted else {
             completion(.failure(.noPermission))
             return
         }

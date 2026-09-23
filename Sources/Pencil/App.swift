@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var quitConfirmation = QuitConfirmation(controller: controller)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ScreenAccess.logState()
         controller.start()
         let dock = DockController(controller: controller)
         let statusMenu = StatusMenuController(controller: controller)

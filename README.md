@@ -216,9 +216,17 @@ macOS only picks up the grant after a relaunch.
 The grant is tied to the app's signature. Run `scripts/make-signing-identity.sh` once. It
 creates a local "Pencil Local Signing" identity in your login keychain, and `bundle.sh` then
 signs every build with it, so the grant survives rebuilds. Without it, builds are ad-hoc
-signed and each rebuild needs the permission granted again. If captures still fail after
-switching signatures, run `tccutil reset ScreenCapture com.haim.pencil`, relaunch Pencil,
-and grant it once more.
+signed and each rebuild needs the permission granted again.
+
+**Switch is on but Pencil still asks?** The switch belongs to an older build with a
+different signature, and toggling it doesn't update it. Use **Reset Screen Recording
+permission** in Pencil's menu (it runs `tccutil reset ScreenCapture com.haim.pencil`),
+turn Pencil on again in the list that opens, then **Relaunch Pencil**.
+
+**On another Mac:** copy `Pencil.app` into `/Applications` and open it from there. Opened
+straight from Downloads or AirDrop, macOS runs a quarantined copy from a random path
+and the grant never sticks; Pencil says so in its toast. `xattr -dr com.apple.quarantine
+/Applications/Pencil.app` clears the flag if moving it isn't enough.
 
 ## Menu bar
 

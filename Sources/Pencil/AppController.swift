@@ -260,13 +260,7 @@ final class AppController {
     private(set) var burstActive = false
 
     private func ensureCapturePermission(on screen: NSScreen?) -> Bool {
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
-            NSLog("Pencil: no Screen Recording access (CGPreflightScreenCaptureAccess returned false)")
-            toast.show("Allow Pencil in Screen Recording, then relaunch Pencil", on: screen, isError: true)
-            return false
-        }
-        return true
+        ScreenAccess.ensure(toast: toast, on: screen)
     }
 
     /// Still capture. Nothing on screen is hidden: ScreenCaptureKit leaves Pencil's own
@@ -319,8 +313,7 @@ final class AppController {
                 }
                 then?(url)
             case .failure(.noPermission):
-                self.toast.show("Allow Pencil in Screen Recording, then relaunch Pencil",
-                                on: toastScreen, isError: true)
+                self.toast.show(ScreenAccess.deniedMessage, on: toastScreen, isError: true)
                 then?(nil)
             case .failure(.captureFailed(let why)):
                 NSLog("Pencil: snapshot failed: \(why)")

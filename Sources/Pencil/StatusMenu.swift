@@ -92,6 +92,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                                  action: #selector(openScreenRecordingSettings), keyEquivalent: "")
         privacy.target = self
         menu.addItem(privacy)
+        let reset = NSMenuItem(title: "Reset Screen Recording permission",
+                               action: #selector(resetScreenRecording), keyEquivalent: "")
+        reset.target = self
+        menu.addItem(reset)
         let relaunch = NSMenuItem(title: "Relaunch Pencil", action: #selector(relaunch), keyEquivalent: "")
         relaunch.target = self
         menu.addItem(relaunch)
@@ -207,25 +211,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func openScreenRecordingSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
-    }
+    @objc private func openScreenRecordingSettings() { ScreenAccess.openSettings() }
+
+    /// For a switch that's on but doesn't take (an entry left from another build).
+    @objc private func resetScreenRecording() { ScreenAccess.reset(toast: controller.toast) }
 
     /// Screen Recording access is read once per process, so a fresh grant needs a relaunch.
-    @objc private func relaunch() {
-        let path = Bundle.main.bundlePath
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "sleep 0.6; /usr/bin/open \"$0\"", path]
-        do {
-            try task.run()
-            NSApp.terminate(nil)
-        } catch {
-            NSLog("Pencil: relaunch failed: \(error.localizedDescription)")
-        }
-    }
+    @objc private func relaunch() { ScreenAccess.relaunch() }
 
     @objc private func openFolder() { Snapshotter.openFolder() }
     // After the menu has closed, so the confirmation can take the keyboard.

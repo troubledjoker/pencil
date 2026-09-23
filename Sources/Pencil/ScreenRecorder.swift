@@ -36,11 +36,7 @@ final class ScreenRecorder {
             toast?.show("Screen recording needs macOS 15", on: nil, isError: true)
             return
         }
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
-            toast?.show("Allow Pencil in Screen Recording, then relaunch Pencil", on: nil, isError: true)
-            return
-        }
+        guard ScreenAccess.ensure(toast: toast, on: nil) else { return }
         isStarting = true
         CaptureSession.isActive = true
         selector.pick(.record) { [weak self] result in
