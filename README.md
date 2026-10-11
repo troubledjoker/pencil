@@ -151,13 +151,14 @@ Every global key works from any app, even with the toolbar collapsed.
 | --- | --- |
 | **P** / **H** / **L** | Pen / Highlighter / Laser |
 | **E** / **O** | Eraser / Object eraser |
+| **I** / **V** / **R** / **C** | Line / Arrow / Rectangle / Ellipse (hold **⇧** for 45°, square, circle) |
 | **1–5** | Red, yellow, green, blue, white |
 | **Z** or **⌘Z** | Undo |
 | **X** | Clear all |
 | **]** / **[** | Bigger / smaller stroke |
 | **⏎** | Capture the drawing to the clipboard |
 | **S** / **A** | Snapshot screen / Capture region |
-| **Esc** | Stop drawing. Ink stays and clicks go through |
+| **Esc** | Stop drawing. Ink stays and clicks go through. Works on the first press, wherever the focus is |
 | **?** | Show the cheat sheet |
 
 > [!NOTE]
@@ -176,17 +177,22 @@ Every global key works from any app, even with the toolbar collapsed.
 | **Laser** | Glowing stroke that fades after about 2.5s |
 | **Eraser** | Rubs out the ink under the circle, splitting a stroke if you cut through it |
 | **Object eraser** | Removes any stroke the circle touches, all of it |
+| **Line / Arrow** | Drag from start to end. Hold **⇧** to snap to 45° |
+| **Rectangle / Ellipse** | Drag from corner to corner, like selecting an area. Hold **⇧** for a square or circle |
 | **Pass-through** | Ink stays visible, clicks go to your apps (press **Esc** while drawing) |
 | **Off** | Ink hidden, clicks go to your apps. The ink comes back when you draw again |
 
-- **Colors:** keys **1–5**, or the color chip in the toolbar.
+- **Colors:** keys **1–5**, the color chip in the toolbar, or the color chip in the floating pill.
 - **Stroke size:** 7 sizes shared by every tool and remembered. Use **⌥]** / **⌥[**, the
   **+ / −** in the floating pill, or scroll over the size dot. Ink you already drew keeps its width.
   The size also sets how big the erasers are; the cursor is a circle that size.
-- **Erasers:** in the toolbar right under the pen. One drag is one undo step, so **Z** brings
-  back everything that drag erased.
+- **Erasers:** both are in the floating pill once there's ink: the eraser (rubs out what you drag
+  over) and the stroke eraser (removes whole lines). Click the active one again to go back to
+  your pen. One drag is one undo step, so **Z** brings back everything that drag erased.
 - **Undo** steps back through strokes, erases and Clear alike.
-- **Undo / Clear:** a small pill shows up next to the pencil whenever there's ink on screen.
+- **Undo / Clear / Capture drawing:** a small pill shows up next to the pencil whenever there's
+  ink on screen. Capture drawing (the camera) only appears once there's ink to capture.
+- **Shapes** are ink like any other: undo, the erasers, Clear and capture all work on them.
 - Starting a mode with ⌥1 or ⌥2 takes the keyboard right away. **Esc** hands it back to your app.
 
 ---
@@ -264,11 +270,15 @@ Pencil has no Dock icon. It lives in a **pencil tab on the left edge of the scre
 <details>
 <summary><b>What's in the toolbar</b></summary>
 
-- **Draw:** Pen, Highlighter, Laser, and the color chip (click it for the five colors)
-- **Capture:** Snapshot, Capture region, Capture drawing, Screen recording
+Every button has its name under it.
+
+- **Draw:** Pen, Highlight, Laser, Shapes (Line, Arrow, Rectangle, Ellipse slide out), Color
+- **Capture:** Screen, Area (⇧-click for several in a row), Record
 - **Clipboard:** the clipboard history sidebar
-- **Off:** stop drawing and collapse
-- **Hide** and **Quit** at the end
+- **Off** (stop drawing, hide the ink, collapse) and **Quit**
+
+The two erasers, Undo, Clear and Capture drawing are in the floating pill next to the pencil,
+and only once there's ink. Clicking the pencil, or anywhere else, closes the toolbar.
 
 The toolbar opens downward, or upward when the tab is near the bottom of the screen. It
 stays open while you draw, so you can change color mid-drawing. The pencil tab gets a

@@ -60,12 +60,19 @@ final class EditPillTests: XCTestCase {
 
     func testSizeSectionMakesThePillTaller() {
         XCTAssertEqual(DockGeometry.editPillSize(showingSize: false), CGSize(width: 36, height: 66))
-        XCTAssertEqual(DockGeometry.editPillSizeSectionHeight, 34 + 9, "one dot and a divider")
-        XCTAssertEqual(tall, CGSize(width: 36, height: 109))
+        XCTAssertEqual(DockGeometry.editPillSizeSectionHeight, 32 + 34 + 9, "color chip, one dot and a divider")
+        XCTAssertEqual(tall, CGSize(width: 36, height: 141))
+    }
+
+    func testEachEditButtonAddsARow() {
+        XCTAssertEqual(DockGeometry.editPillSize(showingSize: false, editButtons: 2).height, 66, "Undo, Clear")
+        XCTAssertEqual(DockGeometry.editPillSize(showingSize: false, editButtons: 4).height, 130,
+                       "with ink: Eraser, Undo, Clear, Capture")
+        XCTAssertEqual(DockGeometry.editPillSize(showingSize: true, editButtons: 4).height, 130 + 75)
     }
 
     func testTallPillNearTheBottomGoesAboveTheTile() {
-        let t = tile(centerY: 180) // 164...196: no room below for the 109pt pill + 6
+        let t = tile(centerY: 180) // 164...196: no room below for the 141pt pill + 6
         let p = DockGeometry.editPillFrame(anchor: t, x: 0, size: tall, preferBelow: true, in: visible)
         XCTAssertEqual(p.minY, t.maxY + 6)
         XCTAssertEqual(p.height, tall.height)
@@ -83,7 +90,7 @@ final class EditPillTests: XCTestCase {
 
     func testTallPillSqueezedBetweenBothEndsIsClamped() {
         let short = CGRect(x: 0, y: 70, width: 1440, height: 180)
-        let t = CGRect(x: 0, y: 140, width: 36, height: 32) // neither side fits 109 + 6
+        let t = CGRect(x: 0, y: 140, width: 36, height: 32) // neither side fits 141 + 6
         let p = DockGeometry.editPillFrame(anchor: t, x: 0, size: tall, preferBelow: true, in: short)
         XCTAssertTrue(short.contains(p))
     }

@@ -126,6 +126,11 @@ final class OverlayView: NSView {
         controller?.pointerUp()
     }
 
+    override func flagsChanged(with event: NSEvent) {
+        controller?.modifiersChanged(event.modifierFlags)
+        super.flagsChanged(with: event)
+    }
+
     // MARK: Keys (only while the overlay is key)
 
     override func keyDown(with event: NSEvent) {

@@ -3,17 +3,27 @@ import Foundation
 
 /// A drawing tool. Pen and highlighter ink persists; laser ink fades. The erasers
 /// leave no ink: the eraser cuts through strokes, the object eraser removes whole ones.
+/// The shapes (line, arrow, rectangle, ellipse) are dragged out from a corner and drawn
+/// with straight segments; they persist like pen ink.
 public enum Tool: String, CaseIterable, Sendable {
     case pen, highlighter, laser, eraser, objectEraser
+    case line, arrow, rectangle, ellipse
 
     public var isPersistent: Bool { self != .laser }
 
     public var isEraser: Bool { self == .eraser || self == .objectEraser }
 
+    public var isShape: Bool {
+        switch self {
+        case .line, .arrow, .rectangle, .ellipse: return true
+        default: return false
+        }
+    }
+
     /// Width at the default size level (3). The stroke size scales it.
     public var baseLineWidth: CGFloat {
         switch self {
-        case .pen: return 4
+        case .pen, .line, .arrow, .rectangle, .ellipse: return 4
         case .highlighter: return 18
         case .laser: return 3
         case .eraser: return 20
@@ -23,7 +33,7 @@ public enum Tool: String, CaseIterable, Sendable {
 
     public var opacity: CGFloat {
         switch self {
-        case .pen: return 1
+        case .pen, .line, .arrow, .rectangle, .ellipse: return 1
         case .highlighter: return 0.35
         case .laser: return 0.9
         case .eraser, .objectEraser: return 0
@@ -51,6 +61,10 @@ public enum Tool: String, CaseIterable, Sendable {
         case .laser: return "Laser"
         case .eraser: return "Eraser"
         case .objectEraser: return "Object eraser"
+        case .line: return "Line"
+        case .arrow: return "Arrow"
+        case .rectangle: return "Rectangle"
+        case .ellipse: return "Ellipse"
         }
     }
 }
@@ -192,6 +206,13 @@ public struct Stroke: Identifiable, Sendable {
         recomputeBounds()
     }
 
+    /// Replaces every point (a shape being dragged out is redrawn from scratch).
+    mutating func reshape(_ locations: [CGPoint], time: TimeInterval) {
+        guard !locations.isEmpty else { return }
+        points = locations.map { InkPoint($0, time: time) }
+        recomputeBounds()
+    }
+
     mutating func append(_ p: InkPoint) {
         points.append(p)
         pointBounds = pointBounds.union(CGRect(origin: p.location, size: .zero))
@@ -235,6 +256,8 @@ public final class InkStore {
     private var nextID = 1
     /// `strokes` before each undoable change (a stroke added, an erase gesture), oldest first.
     private var history: [[Stroke]] = []
+    /// The shape being dragged out: where the drag started and where the pointer is now.
+    private var shapeDrag: (anchor: CGPoint, last: CGPoint)?
     /// The eraser gesture in progress, if any.
     private var erasing: (tool: Tool, radius: CGFloat, last: CGPoint, recorded: Bool)?
     private static let historyLimit = 200
@@ -271,12 +294,25 @@ public final class InkStore {
                             first: InkPoint(location, time: time))
         nextID += 1
         current = stroke
+        shapeDrag = tool.isShape ? (location, location) : nil
         return union(dirty, stroke.renderBounds)
     }
 
+    /// Adds a point to the stroke, or for a shape redraws it from its anchor to `location`.
+    /// `constrain` (Shift) keeps a line or arrow to 45° steps and makes a rectangle a
+    /// square and an ellipse a circle.
     @discardableResult
-    public func extend(to location: CGPoint, time: TimeInterval) -> CGRect? {
+    public func extend(to location: CGPoint, time: TimeInterval, constrain: Bool = false) -> CGRect? {
         guard var stroke = current else { return nil }
+        if let drag = shapeDrag {
+            shapeDrag?.last = location
+            let before = stroke.renderBounds
+            stroke.reshape(ShapeGeometry.points(stroke.tool, from: drag.anchor, to: location,
+                                                constrain: constrain, lineWidth: stroke.lineWidth),
+                           time: time)
+            current = stroke
+            return before.union(stroke.renderBounds)
+        }
         if let last = stroke.points.last {
             let dx = location.x - last.location.x, dy = location.y - last.location.y
             if (dx * dx + dy * dy).squareRoot() < minimumPointSpacing { return nil }
@@ -295,7 +331,11 @@ public final class InkStore {
     public func end() -> CGRect? {
         guard let stroke = current else { return nil }
         current = nil
+        let drag = shapeDrag
+        shapeDrag = nil
         if stroke.points.isEmpty { return nil }
+        // A click with a shape tool (no real drag) leaves nothing behind.
+        if let drag, ShapeGeometry.isTooSmall(from: drag.anchor, to: drag.last) { return stroke.renderBounds }
         if stroke.tool.isPersistent {
             record()
             strokes.append(stroke)
@@ -303,6 +343,14 @@ public final class InkStore {
             laserStrokes.append(stroke)
         }
         return stroke.renderBounds
+    }
+
+    /// Redraws the shape being dragged out at the last pointer location, for Shift being
+    /// pressed or released while the mouse is still.
+    @discardableResult
+    public func reshapeCurrent(constrain: Bool, time: TimeInterval) -> CGRect? {
+        guard let drag = shapeDrag else { return nil }
+        return extend(to: drag.last, time: time, constrain: constrain)
     }
 
     /// Reverts the last stroke or erase.

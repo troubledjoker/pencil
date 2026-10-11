@@ -9,6 +9,8 @@ enum InkRenderer {
             switch stroke.tool {
             case .pen, .highlighter:
                 drawSolid(stroke, in: ctx)
+            case .line, .arrow, .rectangle, .ellipse:
+                drawShape(stroke, in: ctx)
             case .laser:
                 drawLaser(stroke, store: store, in: ctx, now: now)
             case .eraser, .objectEraser:
@@ -38,6 +40,20 @@ enum InkRenderer {
             ctx.setLineCap(.round)
         }
         ctx.addPath(smoothPath(pts))
+        ctx.strokePath()
+    }
+
+    /// Shapes keep their corners: straight segments through the points, no smoothing.
+    private static func drawShape(_ stroke: Stroke, in ctx: CGContext) {
+        let pts = stroke.points.map(\.location)
+        guard pts.count > 1 else { return }
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        ctx.setLineWidth(stroke.lineWidth)
+        ctx.setStrokeColor(stroke.color.cgColor(alpha: stroke.tool.opacity))
+        ctx.setLineJoin(.round)
+        ctx.setLineCap(.round)
+        ctx.addLines(between: pts)
         ctx.strokePath()
     }
 

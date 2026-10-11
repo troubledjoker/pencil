@@ -45,6 +45,29 @@ final class HotkeyCenter {
         return true
     }
 
+    /// A key that is only grabbed while switched on (Esc while drawing), so the rest of the
+    /// time it reaches the user's apps untouched. Returns the switch.
+    func registerSwitchable(keyCode: Int, modifiers: UInt32,
+                            _ action: @escaping () -> Void) -> (Bool) -> Void {
+        let id = UInt32(actions.count + 1)
+        actions[id] = action
+        var ref: EventHotKeyRef?
+        return { on in
+            if on, ref == nil {
+                let status = RegisterEventHotKey(UInt32(keyCode), modifiers,
+                                                 EventHotKeyID(signature: Self.signature, id: id),
+                                                 GetApplicationEventTarget(), 0, &ref)
+                if status != noErr {
+                    NSLog("Pencil: could not register hotkey keyCode=\(keyCode) (\(status))")
+                    ref = nil
+                }
+            } else if !on, let r = ref {
+                UnregisterEventHotKey(r)
+                ref = nil
+            }
+        }
+    }
+
     private func fire(_ id: UInt32) {
         actions[id]?()
     }

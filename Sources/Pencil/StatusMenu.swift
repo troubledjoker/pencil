@@ -137,6 +137,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case .draw(.laser): symbol = "wand.and.rays"
         case .draw(.eraser): symbol = "eraser"
         case .draw(.objectEraser): symbol = "eraser.line.dashed"
+        case .draw(let shape): symbol = shape.symbolName
         }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Pencil")
             ?? NSImage(systemSymbolName: "pencil", accessibilityDescription: "Pencil")

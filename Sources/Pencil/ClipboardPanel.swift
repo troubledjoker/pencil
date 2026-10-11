@@ -207,15 +207,16 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         confirming = false
         setConfirming(false)
 
-        // Flush with the visible frame's right edge (left of a right-side Dock), running from its
-        // bottom all the way to the top of the screen: the window sits just below the menu bar's
-        // level, so the (often translucent) menu bar draws over the dark sidebar instead of over
-        // wallpaper. Content starts below the menu bar via `topInset`.
+        // Flush with the visible frame's right edge (left of a right-side Dock), running the full
+        // height of the screen, over a bottom Dock too (the panel's level is above the Dock's).
+        // The window sits just below the menu bar's level, so the (often translucent) menu bar
+        // draws over the dark sidebar instead of over wallpaper. Content starts below the menu
+        // bar via `topInset`.
         let v = screen.visibleFrame
         let w = Self.width
-        let h = screen.frame.maxY - v.minY
+        let h = screen.frame.height
         topInset = screen.frame.maxY - v.maxY
-        let target = NSRect(x: v.maxX - w, y: v.minY, width: w, height: h)
+        let target = NSRect(x: v.maxX - w, y: screen.frame.minY, width: w, height: h)
         openFrame = target
         // One sheet: the WINDOW slides and fades as a whole; nothing inside animates on its own.
         let wasVisible = window.isVisible // reopened while a close was still running

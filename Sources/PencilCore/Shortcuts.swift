@@ -236,6 +236,10 @@ public enum Shortcuts {
         case "l": return .tool(.laser)
         case "e": return .tool(.eraser)
         case "o": return .tool(.objectEraser)
+        case "i": return .tool(.line)
+        case "v": return .tool(.arrow)
+        case "r": return .tool(.rectangle)
+        case "c": return .tool(.ellipse)
         case "z": return .undo
         case "x": return .clear
         case "]": return .size(delta: 1)
@@ -263,6 +267,7 @@ public enum Shortcuts {
     public static let drawingRows: [(String, String)] = [
         ("P  H  L", "Pen · Highlighter · Laser"),
         ("E  O", "Eraser · Object eraser"),
+        ("I  V  R  C", "Line · Arrow · Rectangle · Ellipse (⇧ straight, square, circle)"),
         ("1 – 5", "Red · Yellow · Green · Blue · White"),
         ("Z  or  ⌘Z", "Undo"),
         ("X", "Clear all"),

@@ -109,15 +109,20 @@ public enum DockGeometry {
         return (r, d)
     }
 
-    /// Heights of the floating edit pill: Undo/Clear only, and with the size section
-    /// (one preview dot and a divider) added while a drawing tool is active.
+    /// Heights of the floating edit pill: the edit block (Undo/Clear, plus Eraser and
+    /// Capture drawing while there's ink, 32pt each and 1pt at both ends), plus the size
+    /// section (color chip, size dot and a divider) while a drawing tool is active.
     public static let editPillWidth: CGFloat = 36
-    public static let editPillHeight: CGFloat = 66
+    public static let editPillButtonHeight: CGFloat = 32
+    public static let editPillColorHeight: CGFloat = 32
     public static let editPillSizeDotHeight: CGFloat = 34
-    public static let editPillSizeSectionHeight: CGFloat = editPillSizeDotHeight + 9
-    public static func editPillSize(showingSize: Bool) -> CGSize {
+    public static let editPillSizeSectionHeight: CGFloat = editPillColorHeight + editPillSizeDotHeight + 9
+    public static func editBlockHeight(buttons: Int) -> CGFloat {
+        CGFloat(buttons) * editPillButtonHeight + 2
+    }
+    public static func editPillSize(showingSize: Bool, editButtons: Int = 2) -> CGSize {
         CGSize(width: editPillWidth,
-               height: editPillHeight + (showingSize ? editPillSizeSectionHeight : 0))
+               height: editBlockHeight(buttons: editButtons) + (showingSize ? editPillSizeSectionHeight : 0))
     }
 
     /// The size section sits at the pill's end away from the nearest end of the screen

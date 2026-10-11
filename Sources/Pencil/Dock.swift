@@ -20,15 +20,21 @@ final class DockController {
     private var toolButtons: [Tool: DockButton] = [:]
     private var clipboardButton: DockButton?
     private lazy var recordButton: DockButton = {
-        let b = DockButton(symbol: "record.circle", hint: Shortcuts.hint("Screen recording", .record))
+        let b = DockButton(symbol: "record.circle", hint: Shortcuts.hint("Screen recording", .record), title: "Record")
         b.onClick = { [weak self] in
-            self?.flyout.close()
+            self?.closeFlyouts()
             self?.controller.toggleRecording()
         }
         return b
     }()
     private var swatch: DockSwatch!
     private let flyout = ColorFlyout()
+    private var shapesButton: DockButton!
+    private let shapeFlyout = ShapeFlyout()
+    /// The shape the Shapes button shows: the last one used.
+    private var lastShape: Tool = .rectangle
+    /// The ink tool the pill's eraser button goes back to.
+    private var lastInkTool: Tool = .pen
     private var lastMode: Mode?
     /// Mouse monitors that collapse the open toolbar on a click anywhere else.
     private var outsideClickMonitors: [Any] = []
@@ -61,7 +67,7 @@ final class DockController {
     private var offsetY: CGFloat = 0
 
     // Geometry
-    static let expandedWidth: CGFloat = 48
+    static let expandedWidth: CGFloat = 64
     /// The pencil tile: flush with the screen edge (it looks like it comes out of it),
     /// the same size and place collapsed and as the open toolbar's handle.
     static let tileSize = NSSize(width: 36, height: 32)
@@ -135,14 +141,32 @@ final class DockController {
         editPill.onClear = { [weak self] in self?.controller.clear() }
         editPill.onSize = { [weak self] delta in self?.controller.changeSize(by: delta, announce: false) }
         editPill.onSetLevel = { [weak self] level in self?.controller.setSizeLevel(level) }
-        flyout.companion = panel
+        editPill.onCapture = { [weak self] in self?.controller.captureDrawing() }
+        editPill.onColor = { [weak self] chip in self?.toggleFlyout(from: chip) }
+        flyout.companions = [panel, editPill.window]
         flyout.onPick = { [weak self] color in
             self?.controller.setColor(color)
             self?.flyout.close()
         }
+        shapeFlyout.companions = [panel]
+        shapeFlyout.onPick = { [weak self] tool in
+            self?.shapeFlyout.close()
+            self?.controller.setMode(.draw(tool))
+        }
+        shapeFlyout.onOpenChange = { [weak self] open in
+            guard let self else { return }
+            self.shapesButton.isSelected = open || self.controller.mode.tool?.isShape == true
+        }
+        // Each eraser button turns its eraser on, or back to the last ink tool when it already is.
+        editPill.onEraser = { [weak self] eraser in
+            guard let self else { return }
+            let tool = self.controller.mode.tool
+            self.controller.setMode(.draw(tool == eraser ? self.lastInkTool : eraser))
+        }
         flyout.onOpenChange = { [weak self] open in
             guard let self else { return }
-            self.swatch.isOpen = open
+            self.swatch.isOpen = open && !self.flyoutFromPill
+            self.editPill.colorOpen = open && self.flyoutFromPill
         }
         ClipboardHistoryController.shared.observeOpen { [weak self] open in
             self?.clipboardButton?.isSelected = open
@@ -158,49 +182,53 @@ final class DockController {
 
     private func buildToolbar() {
         let w = Self.expandedWidth
-        // Sections from the handle end: handle, Draw, Edit, Capture, Clipboard, Off, Hide / Quit.
+        // Sections from the handle end, each a labeled group: Draw (Pen, Highlight, Laser,
+        // Shapes, Color), Capture (Screen, Area, Record), Clipboard, then Off and Quit.
+        // The erasers, Undo, Clear and Capture drawing are in the edit pill, once there's ink.
         // The handle slot is empty: the persistent pencil view sits on top of it.
         sections = []
         handleSpacer = NSView(frame: NSRect(x: 0, y: 0, width: 44, height: 40))
         sections.append(handleSpacer)
 
         let tools: [(Tool, String, String)] = [
-            (.pen, "pencil.tip", Shortcuts.hint("Pen", .pen)),
-            (.eraser, "eraser", Shortcuts.hint("Eraser", .eraser)),
-            (.objectEraser, "eraser.line.dashed", Shortcuts.hint("Object eraser", .objectEraser)),
-            (.highlighter, "highlighter", Shortcuts.hint("Highlighter", .highlighter)),
-            (.laser, "wand.and.rays", Shortcuts.hint("Laser", .laser)),
+            (.pen, "Pen", Shortcuts.hint("Pen", .pen)),
+            (.highlighter, "Highlight", Shortcuts.hint("Highlighter", .highlighter)),
+            (.laser, "Laser", Shortcuts.hint("Laser: fades after a moment", .laser)),
         ]
         var drawItems: [NSView] = []
-        for (tool, symbol, tip) in tools {
-            let b = DockButton(symbol: symbol, hint: tip)
+        for (tool, title, tip) in tools {
+            let b = DockButton(symbol: tool.symbolName, hint: tip, title: title)
             b.onClick = { [weak self] in
-                self?.flyout.close()
+                self?.closeFlyouts()
                 self?.controller.setMode(.draw(tool))
             }
             toolButtons[tool] = b
             drawItems.append(b)
         }
+        // Shapes: one button; the four shapes slide out next to it.
+        shapesButton = DockButton(symbol: lastShape.symbolName, hint: "Line, arrow, rectangle, ellipse", title: "Shapes")
+        shapesButton.onClick = { [weak self] in self?.toggleShapeFlyout() }
+        drawItems.append(shapesButton)
         // The color chip closes out the Draw group.
-        swatch = DockSwatch()
-        swatch.hint = Shortcuts.hint("Ink color")
+        swatch = DockSwatch(title: "Color")
+        swatch.hint = "Ink color  1–5 while drawing"
         swatch.onClick = { [weak self] in self?.toggleFlyout() }
         drawItems.append(swatch)
         sections.append(DockGroup(drawItems))
 
-        func action(_ symbol: String, _ tip: String, _ run: @escaping () -> Void) -> DockButton {
-            let b = DockButton(symbol: symbol, hint: tip)
+        func action(_ symbol: String, _ title: String, _ tip: String, _ run: @escaping () -> Void) -> DockButton {
+            let b = DockButton(symbol: symbol, hint: tip, title: title)
             b.onClick = { [weak self] in
-                self?.flyout.close()
+                self?.closeFlyouts()
                 run()
             }
             return b
         }
         sections.append(DockGroup([
-            action("camera.viewfinder", Shortcuts.hint("Snapshot screen", .snapshot)) { [weak self] in
+            action("macwindow", "Screen", Shortcuts.hint("Snapshot the whole screen", .snapshot)) { [weak self] in
                 self?.controller.snapshot(.screenUnderMouse)
             },
-            action("crop", Shortcuts.hint("Region capture", .region) + " · ⇧-click: burst "
+            action("rectangle.dashed", "Area", Shortcuts.hint("Capture an area", .region) + " · ⇧-click: several in a row "
                    + Shortcuts.Global.burst.label) { [weak self] in
                 // ⇧-click starts a burst (several regions, Esc when done).
                 if NSEvent.modifierFlags.contains(.shift) {
@@ -209,34 +237,26 @@ final class DockController {
                     self?.controller.snapshot(.region)
                 }
             },
-            action("pencil.and.outline", Shortcuts.hint("Capture drawing", .captureDrawing)) { [weak self] in
-                self?.controller.captureDrawing()
-            },
             recordButton,
         ]))
 
-        // Clipboard history: its own group above Off. Toggles the right-edge sidebar.
-        let clipboard = action("doc.on.clipboard", "Clipboard history  " + ClipboardHistoryController.hotkeyLabel) {
+        // Clipboard history: toggles the right-edge sidebar.
+        let clipboard = action("doc.on.clipboard", "Clipboard", "Clipboard history  " + ClipboardHistoryController.hotkeyLabel) {
             ClipboardHistoryController.shared.toggle()
         }
         clipboardButton = clipboard
         sections.append(DockGroup([clipboard]))
 
-        let off = DockButton(symbol: "xmark.circle", hint: Shortcuts.hint("Off", .off))
-        off.onClick = { [weak self] in
+        // Off: stop drawing, hide the ink, collapse. Quit asks first. (Clicking the pencil, or
+        // anywhere else, just closes the toolbar.)
+        let off = action("xmark.circle", "Off", Shortcuts.hint("Stop drawing and hide the ink", .off)) { [weak self] in
             self?.controller.setMode(.off)
             self?.setExpanded(false)
         }
-        sections.append(off)
-
-        // Pencil itself, at the very end: tuck the toolbar away (like ⌥9), or quit (asks first).
-        let hide = action("chevron.left.to.line", Shortcuts.hint("Hide", Shortcuts.Feature.hide.global)) { [weak self] in
-            self?.setExpanded(false)
-        }
-        let quit = action("power", Shortcuts.hint("Quit Pencil", Shortcuts.Feature.quit.global)) { [weak self] in
+        let quit = action("power", "Quit", Shortcuts.hint("Quit Pencil", Shortcuts.Feature.quit.global)) { [weak self] in
             self?.onQuit?()
         }
-        sections.append(DockGroup([hide, quit]))
+        sections.append(DockGroup([off, quit]))
 
         let total = sections.reduce(Self.sectionPadding * 2 + Self.sectionGap * CGFloat(sections.count - 1)) {
             $0 + $1.frame.height
@@ -320,32 +340,76 @@ final class DockController {
         recordButton.isSelected = recording
         recordButton.contentTint = recording ? .systemRed : nil
         recordButton.hint = Shortcuts.hint(recording ? "Stop recording" : "Screen recording", .record)
-        for (tool, b) in toolButtons {
-            let active = controller.mode.tool == tool
+        let ink = nsColor(controller.color)
+        let tool = controller.mode.tool
+        if let tool, !tool.isEraser { lastInkTool = tool }
+        for (t, b) in toolButtons {
+            let active = tool == t
             b.isSelected = active
-            // The active tool's icon takes the ink color (the erasers have none).
-            b.contentTint = active && !tool.isEraser ? nsColor(controller.color) : nil
+            // The active tool's icon takes the ink color.
+            b.contentTint = active ? ink : nil
         }
+        if let tool, tool.isShape, tool != lastShape {
+            lastShape = tool
+            shapesButton.setSymbol(tool.symbolName)
+        }
+        let drawingShape = tool?.isShape == true
+        shapesButton.isSelected = drawingShape || shapeFlyout.isOpen
+        shapesButton.contentTint = drawingShape ? ink : nil
+        shapeFlyout.select(tool, color: ink)
         swatch.color = controller.color
-        swatch.isOpen = flyout.isOpen
+        swatch.isOpen = flyout.isOpen && !flyoutFromPill
         flyout.select(controller.color)
-        // Picking a mode (from the dock, a hotkey or Esc) closes the color flyout.
-        if let lastMode, lastMode != controller.mode { flyout.close() }
+        // Picking a mode (from the dock, a hotkey or Esc) closes the flyouts.
+        if let lastMode, lastMode != controller.mode { closeFlyouts() }
         lastMode = controller.mode
         updatePeek()
     }
 
     // MARK: Color flyout
 
+    private func closeFlyouts() {
+        flyout.close()
+        shapeFlyout.close()
+    }
+
+    /// The four shapes, level with the Shapes button, just right of the toolbar.
+    private func toggleShapeFlyout() {
+        if shapeFlyout.isOpen {
+            shapeFlyout.close()
+            return
+        }
+        flyout.close()
+        let onScreen = panel.convertToScreen(shapesButton.convert(shapesButton.bounds, to: nil))
+        shapeFlyout.open(anchorX: expandedTarget.maxX + 2, centerY: onScreen.midY)
+    }
+
+    /// Whether the open flyout belongs to the pill's color chip (else the toolbar's swatch).
+    private var flyoutFromPill = false
+
     private func toggleFlyout() {
         if flyout.isOpen {
+            let fromPill = flyoutFromPill
             flyout.close()
-        } else {
-            // Level with the swatch, just right of the toolbar.
-            let onScreen = panel.convertToScreen(swatch.convert(swatch.bounds, to: nil))
-            flyout.open(anchorX: expandedTarget.maxX + 2, centerY: onScreen.midY, selected: controller.color)
+            if !fromPill { return }
         }
-        swatch.isOpen = flyout.isOpen
+        // Level with the swatch, just right of the toolbar.
+        flyoutFromPill = false
+        shapeFlyout.close()
+        let onScreen = panel.convertToScreen(swatch.convert(swatch.bounds, to: nil))
+        flyout.open(anchorX: expandedTarget.maxX + 2, centerY: onScreen.midY, selected: controller.color)
+    }
+
+    /// The pill's color chip (`chip` in screen coordinates): the same five colors, just right of the pill.
+    private func toggleFlyout(from chip: NSRect) {
+        if flyout.isOpen {
+            let fromPill = flyoutFromPill
+            flyout.close()
+            if fromPill { return }
+        }
+        editPill.closeSlider()
+        flyoutFromPill = true
+        flyout.open(anchorX: chip.maxX + 3, centerY: chip.midY, selected: controller.color)
     }
 
     // MARK: Expand / collapse (one pencil, morphing)
@@ -357,7 +421,7 @@ final class DockController {
         isExpanded = expand
         generation += 1
         let gen = generation
-        if !expand { flyout.close() }
+        if !expand { closeFlyouts() }
         HintCenter.shared.hide()
         if expand { installOutsideClickMonitors() } else { removeOutsideClickMonitors() }
 
@@ -522,8 +586,8 @@ final class DockController {
     /// Esc while the size slider or the color flyout is open closes it. Returns true if it did.
     func handleEscape() -> Bool {
         if editPill.closeSlider() { return true }
-        guard flyout.isOpen else { return false }
-        flyout.close()
+        guard flyout.isOpen || shapeFlyout.isOpen else { return false }
+        closeFlyouts()
         return true
     }
 
@@ -606,7 +670,10 @@ final class DockController {
                             width: Self.tileSize.width, height: Self.tileSize.height)
             preferBelow = true
         }
-        let size = DockGeometry.editPillSize(showingSize: drawingTool != nil)
+        // The erasers show while there's ink to erase (or one is the tool in use).
+        let showEraser = hasInk || drawingTool?.isEraser == true
+        let size = DockGeometry.editPillSize(showingSize: drawingTool != nil,
+                                             editButtons: 2 + (showEraser ? 2 : 0) + (hasInk ? 1 : 0))
         let frame = DockGeometry.editPillFrame(anchor: anchor, x: s.frame.minX, size: size,
                                                preferBelow: preferBelow, in: s.visibleFrame)
         if let drawingTool {
@@ -614,9 +681,12 @@ final class DockController {
             editPill.configure(size: .init(level: controller.strokeSize.level, tool: drawingTool,
                                            color: drawingTool.isEraser ? .white : controller.color,
                                            onTop: DockGeometry.sizeSectionOnTop(pill: frame, in: s.visibleFrame)),
-                               hasInk: hasInk, canUndo: controller.store.canUndo)
+                               inkColor: controller.color, hasInk: hasInk, showEraser: showEraser,
+                               erasing: drawingTool.isEraser ? drawingTool : nil,
+                               canUndo: controller.store.canUndo)
         } else {
-            editPill.configure(size: nil, hasInk: hasInk, canUndo: controller.store.canUndo)
+            editPill.configure(size: nil, inkColor: controller.color, hasInk: hasInk, showEraser: showEraser,
+                               erasing: nil, canUndo: controller.store.canUndo)
         }
         editPill.show(at: frame, duration: duration)
     }
@@ -627,7 +697,7 @@ final class DockController {
     /// `start` and `now` are global mouse locations. Vertical only; moving the
     /// mouse onto another screen moves the dock to that screen's left edge.
     private func drag(from start: NSPoint, to now: NSPoint) {
-        flyout.close()
+        closeFlyouts()
         HintCenter.shared.hide()
         if let target = NSScreen.screens.first(where: { NSMouseInRect(now, $0.frame, false) }),
            target.displayID != screenID {
@@ -910,6 +980,23 @@ func nsColor(_ c: InkColor) -> NSColor {
     NSColor(srgbRed: c.red, green: c.green, blue: c.blue, alpha: 1)
 }
 
+extension Tool {
+    /// The SF Symbol for this tool's toolbar button.
+    var symbolName: String {
+        switch self {
+        case .pen: return "pencil.tip"
+        case .highlighter: return "highlighter"
+        case .laser: return "wand.and.rays"
+        case .eraser: return "eraser"
+        case .objectEraser: return "eraser.line.dashed"
+        case .line: return "line.diagonal"
+        case .arrow: return "arrow.up.right"
+        case .rectangle: return "rectangle"
+        case .ellipse: return "circle"
+        }
+    }
+}
+
 // MARK: - Panel
 
 final class DockPanel: NSPanel {
@@ -1052,23 +1139,41 @@ class DragSurface: NSView, PointerCursorProviding {
 }
 
 final class DockButton: DragSurface {
+    /// A toolbar button with its name under the icon.
+    static let titledSize = NSSize(width: 52, height: 42)
+
     private let imageView = NSImageView()
+    private let titleLabel: NSTextField?
     private var pressed = false { didSet { needsDisplay = true } }
     var isSelected = false { didSet { needsDisplay = true; updateTint() } }
     var contentTint: NSColor? { didSet { updateTint() } }
 
-    init(symbol: String, hint: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 34, height: 32))
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: hint)
-            ?? NSImage(systemSymbolName: "circle", accessibilityDescription: hint)
-        imageView.image = image
+    /// `title`: a short name drawn under the icon (the toolbar); nil for icon-only buttons.
+    init(symbol: String, hint: String, title: String? = nil) {
+        let size = title == nil ? NSSize(width: 34, height: 32) : Self.titledSize
+        titleLabel = title.map { t in
+            let l = NSTextField(labelWithString: t)
+            l.font = .systemFont(ofSize: 9.5, weight: .medium)
+            l.alignment = .center
+            l.lineBreakMode = .byClipping
+            return l
+        }
+        super.init(frame: NSRect(origin: .zero, size: size))
         imageView.symbolConfiguration = .init(pointSize: 15, weight: .medium)
         imageView.imageScaling = .scaleNone
-        imageView.frame = bounds
-        imageView.autoresizingMask = [.width, .height]
+        if let titleLabel {
+            imageView.frame = NSRect(x: 0, y: 15, width: size.width, height: 24)
+            titleLabel.frame = NSRect(x: 0, y: 3, width: size.width, height: 13)
+            addSubview(titleLabel)
+        } else {
+            imageView.frame = bounds
+            imageView.autoresizingMask = [.width, .height]
+        }
         addSubview(imageView)
+        setSymbol(symbol)
         self.hint = hint
-        setAccessibilityLabel(hint)
+        setAccessibilityLabel(title ?? hint)
+        setAccessibilityHelp(hint)
         setAccessibilityRole(.button)
         updateTint()
     }
@@ -1076,8 +1181,14 @@ final class DockButton: DragSurface {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    func setSymbol(_ symbol: String) {
+        imageView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: hint)
+            ?? NSImage(systemSymbolName: "circle", accessibilityDescription: hint)
+    }
+
     private func updateTint() {
         imageView.contentTintColor = contentTint ?? (isSelected ? .white : NSColor.white.withAlphaComponent(0.8))
+        titleLabel?.textColor = isSelected ? .white : NSColor.white.withAlphaComponent(0.7)
     }
 
     override func hoverChanged(_ inside: Bool) { needsDisplay = true }
@@ -1218,7 +1329,7 @@ final class HintCenter {
 
 /// A subtle rounded group behind related toolbar items (like macOS toolbar groups).
 final class DockGroup: NSView {
-    static let width: CGFloat = 40
+    static let width: CGFloat = 56
     private static let inset: CGFloat = 2
 
     init(_ items: [NSView]) {
@@ -1250,9 +1361,12 @@ final class DockSwatch: DragSurface {
     var color: InkColor = .red { didSet { needsDisplay = true } }
     var isOpen = false { didSet { needsDisplay = true } }
     var onHoverChange: ((Bool) -> Void)?
+    /// A short name drawn under the chip (the toolbar); nil in the pill.
+    private let title: String?
 
-    init() {
-        super.init(frame: NSRect(x: 0, y: 0, width: 34, height: 32))
+    init(title: String? = nil) {
+        self.title = title
+        super.init(frame: NSRect(origin: .zero, size: title == nil ? NSSize(width: 34, height: 32) : DockButton.titledSize))
         setAccessibilityLabel("Ink color")
         setAccessibilityRole(.popUpButton)
     }
@@ -1270,8 +1384,18 @@ final class DockSwatch: DragSurface {
             NSColor.white.withAlphaComponent(isOpen ? 0.22 : 0.12).setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 7, yRadius: 7).fill()
         }
-        let side: CGFloat = 18
-        let chip = NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
+        let side: CGFloat = title == nil ? 18 : 16
+        let midY = title == nil ? bounds.midY : 27
+        let chip = NSRect(x: bounds.midX - side / 2, y: midY - side / 2, width: side, height: side)
+        if let title {
+            let style = NSMutableParagraphStyle()
+            style.alignment = .center
+            (title as NSString).draw(in: NSRect(x: 0, y: 3, width: bounds.width, height: 13), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 9.5, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(isOpen ? 1 : 0.7),
+                .paragraphStyle: style,
+            ])
+        }
         nsColor(color).setFill()
         NSBezierPath(roundedRect: chip, xRadius: 5, yRadius: 5).fill()
         // Thin dark edge so white/yellow read on the light group background, light inner edge on top.
@@ -1286,29 +1410,30 @@ final class DockSwatch: DragSurface {
     }
 }
 
-// MARK: - Color flyout
+// MARK: - Flyouts
 
-/// A small pill of the five colors that slides out to the right of the swatch.
-/// It's its own non-activating panel at the dock's level, so it sits above the
-/// ink overlay, takes clicks, and never steals focus.
+/// A small pill of choices that slides out to the right of the control that opened it
+/// (the five colors, the shapes). It's its own non-activating panel at the dock's level,
+/// so it sits above the ink overlay, takes clicks, and never steals focus.
 @MainActor
-final class ColorFlyout {
-    private static let dotWidth: CGFloat = 28
+class Flyout {
     private static let pad: CGFloat = 6
-    static let size = NSSize(width: CGFloat(InkColor.palette.count) * dotWidth + pad * 2, height: 34)
+    static let height: CGFloat = 34
 
     private let panel: DockPanel
-    private var dots: [DockColorDot] = []
     private var monitors: [Any] = []
     private(set) var isOpen = false
+    let size: NSSize
 
-    /// The dock's own panel: clicks there don't count as "clicking elsewhere".
-    weak var companion: NSWindow?
-    var onPick: ((InkColor) -> Void)?
+    /// The dock's own panels (the toolbar and the edit pill, whose controls toggle it):
+    /// clicks there don't count as "clicking elsewhere".
+    var companions: [NSWindow] = []
     var onOpenChange: ((Bool) -> Void)?
 
-    init() {
-        let size = Self.size
+    /// `items` sit side by side, centered vertically.
+    init(items: [NSView]) {
+        let width = items.reduce(Self.pad * 2) { $0 + $1.frame.width }
+        size = NSSize(width: width, height: Self.height)
         panel = DockPanel(contentRect: NSRect(origin: .zero, size: size))
         panel.hasShadow = true
 
@@ -1321,29 +1446,20 @@ final class ColorFlyout {
         effect.autoresizingMask = [.width, .height]
         panel.contentView = effect
 
-        for (i, c) in InkColor.palette.enumerated() {
-            let dot = DockColorDot(color: c, width: Self.dotWidth)
-            dot.frame.origin = NSPoint(x: Self.pad + CGFloat(i) * Self.dotWidth, y: (size.height - dot.frame.height) / 2)
-            dot.hint = c.name
-            dot.hintPlacement = .above // to the right would cover the next color
-            dot.onClick = { [weak self] in self?.onPick?(c) }
-            dots.append(dot)
-            effect.addSubview(dot)
+        var x = Self.pad
+        for item in items {
+            item.frame.origin = NSPoint(x: x, y: (size.height - item.frame.height) / 2)
+            x += item.frame.width
+            effect.addSubview(item)
         }
         let border = PillBorder(frame: effect.bounds)
         border.autoresizingMask = [.width, .height]
         effect.addSubview(border)
     }
 
-    func select(_ color: InkColor) {
-        for dot in dots { dot.isSelected = dot.inkColor == color }
-    }
-
-    func open(anchorX x: CGFloat, centerY: CGFloat, selected: InkColor) {
+    func open(anchorX x: CGFloat, centerY: CGFloat) {
         guard !isOpen else { return }
-        select(selected)
         isOpen = true
-        let size = Self.size
         let target = NSRect(x: x, y: centerY - size.height / 2, width: size.width, height: size.height)
         panel.setFrame(NSRect(x: x, y: target.minY, width: size.height, height: size.height), display: false)
         panel.alphaValue = 0
@@ -1392,8 +1508,8 @@ final class ColorFlyout {
         if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                // The flyout's own dots and the dock (whose swatch toggles it) handle themselves.
-                if event.window !== self.panel, event.window !== self.companion { self.close() }
+                // The flyout's own items and the dock (whose controls toggle it) handle themselves.
+                if event.window !== self.panel, !self.companions.contains(where: { $0 === event.window }) { self.close() }
             }
             return event
         }) {
@@ -1416,6 +1532,69 @@ final class ColorFlyout {
         image.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
         image.resizingMode = .stretch
         return image
+    }
+}
+
+/// The five ink colors.
+final class ColorFlyout: Flyout {
+    private let dots: [DockColorDot]
+    var onPick: ((InkColor) -> Void)?
+
+    init() {
+        let dots = InkColor.palette.map { c in
+            let dot = DockColorDot(color: c, width: 28)
+            dot.hint = c.name
+            dot.hintPlacement = .above // to the right would cover the next color
+            return dot
+        }
+        self.dots = dots
+        super.init(items: dots)
+        for dot in dots {
+            let c = dot.inkColor
+            dot.onClick = { [weak self] in self?.onPick?(c) }
+        }
+    }
+
+    func select(_ color: InkColor) {
+        for dot in dots { dot.isSelected = dot.inkColor == color }
+    }
+
+    func open(anchorX x: CGFloat, centerY: CGFloat, selected: InkColor) {
+        select(selected)
+        open(anchorX: x, centerY: centerY)
+    }
+}
+
+/// Line, Arrow, Rectangle, Ellipse.
+final class ShapeFlyout: Flyout {
+    static let shapes: [(Tool, String)] = [
+        (.line, "Line  I · ⇧ snaps to 45°"),
+        (.arrow, "Arrow  V · ⇧ snaps to 45°"),
+        (.rectangle, "Rectangle  R · ⇧ square"),
+        (.ellipse, "Ellipse  C · ⇧ circle"),
+    ]
+    private let buttons: [(Tool, DockButton)]
+    var onPick: ((Tool) -> Void)?
+
+    init() {
+        let buttons = Self.shapes.map { tool, tip in
+            let b = DockButton(symbol: tool.symbolName, hint: tip)
+            b.hintPlacement = .above
+            return (tool, b)
+        }
+        self.buttons = buttons
+        super.init(items: buttons.map(\.1))
+        for (tool, b) in buttons {
+            b.onClick = { [weak self] in self?.onPick?(tool) }
+        }
+    }
+
+    /// Highlights the active shape (nil: none) in the ink color.
+    func select(_ tool: Tool?, color: NSColor) {
+        for (t, b) in buttons {
+            b.isSelected = t == tool
+            b.contentTint = t == tool ? color : nil
+        }
     }
 }
 
@@ -1791,6 +1970,18 @@ final class EditPill {
 
     var onUndo: (() -> Void)?
     var onClear: (() -> Void)?
+    /// Capture the drawing (cropped to the ink).
+    var onCapture: (() -> Void)?
+    /// An eraser button was clicked (`.eraser` or `.objectEraser`).
+    var onEraser: ((Tool) -> Void)?
+    /// The color chip was clicked; its rect in screen coordinates.
+    var onColor: ((NSRect) -> Void)?
+    /// Shows the color chip as open (its flyout is out).
+    var colorOpen: Bool {
+        get { chip.isOpen }
+        set { chip.isOpen = newValue }
+    }
+    var window: NSWindow { panel }
     /// ±N steps from the scroll wheel over the dot or the slider.
     var onSize: ((Int) -> Void)?
     /// A level picked on the slider.
@@ -1799,6 +1990,10 @@ final class EditPill {
     private let panel: DockPanel
     private let undo: DockButton
     private let clear: DockButton
+    private let capture: DockButton
+    private let eraser: DockButton
+    private let objectEraser: DockButton
+    private let chip = DockSwatch()
     private let dot = SizePreviewDot()
     private let divider = PillDivider()
     private let slider = SizeSlider()
@@ -1829,8 +2024,22 @@ final class EditPill {
 
         undo = DockButton(symbol: "arrow.uturn.backward", hint: Shortcuts.hint("Undo", .undo))
         clear = DockButton(symbol: "trash", hint: Shortcuts.hint("Clear all", .clear))
+        capture = DockButton(symbol: "camera.viewfinder", hint: Shortcuts.hint("Capture the drawing", .captureDrawing))
+        eraser = DockButton(symbol: Tool.eraser.symbolName,
+                            hint: Shortcuts.hint("Eraser: rubs out what you drag over", .eraser))
+        objectEraser = DockButton(symbol: Tool.objectEraser.symbolName,
+                                  hint: Shortcuts.hint("Stroke eraser: removes whole lines you touch", .objectEraser))
+        eraser.onClick = { [weak self] in self?.onEraser?(.eraser) }
+        objectEraser.onClick = { [weak self] in self?.onEraser?(.objectEraser) }
         undo.onClick = { [weak self] in self?.onUndo?() }
         clear.onClick = { [weak self] in self?.onClear?() }
+        capture.onClick = { [weak self] in self?.onCapture?() }
+        chip.hint = "Ink color  1–5"
+        chip.onClick = { [weak self] in
+            guard let self else { return }
+            let r = self.chip.convert(self.chip.bounds, to: nil)
+            self.onColor?(self.panel.convertToScreen(r))
+        }
         dot.onStep = { [weak self] delta in self?.onSize?(delta) }
         dot.onClick = { [weak self] in self?.openSlider() }
         dot.onHover = { [weak self] inside in self?.dotHoverChanged(inside) }
@@ -1841,37 +2050,53 @@ final class EditPill {
             if inside { self.cancelClose() } else { self.scheduleClose() }
         }
         slider.onPressEnd = { [weak self] in self?.scheduleClose() }
-        for v in [undo, clear, dot, divider] as [NSView] { effect.addSubview(v) }
-        configure(size: nil, hasInk: true, canUndo: true)
+        for v in [eraser, objectEraser, undo, clear, capture, chip, dot, divider] as [NSView] { effect.addSubview(v) }
+        configure(size: nil, inkColor: .red, hasInk: true, showEraser: true, erasing: nil, canUndo: true)
     }
 
-    /// Lays out the controls for the next frame: with the size section (`size` non-nil)
-    /// or Undo / Clear only. Clear dims when there's no ink, Undo when there's nothing to undo.
-    func configure(size: SizeState?, hasInk: Bool, canUndo: Bool) {
+    /// Lays out the controls for the next frame: with the size section (`size` non-nil:
+    /// color chip and size dot) or the edit block only. The edit block is the two erasers
+    /// (while there's ink), Undo, Clear, and Capture drawing (while there's ink). `erasing`
+    /// is the eraser in use, if any. Undo dims when there's nothing to undo.
+    func configure(size: SizeState?, inkColor: InkColor, hasInk: Bool, showEraser: Bool, erasing: Tool?,
+                   canUndo: Bool) {
         let w = DockGeometry.editPillWidth
         let showSize = size != nil
-        for v in [dot, divider] as [NSView] { v.isHidden = !showSize }
+        for v in [dot, divider, chip] as [NSView] { v.isHidden = !showSize }
+        capture.isHidden = !hasInk
+        eraser.isHidden = !showEraser
+        objectEraser.isHidden = !showEraser
+        eraser.isSelected = erasing == .eraser
+        objectEraser.isSelected = erasing == .objectEraser
+        let buttons = (showEraser ? [eraser, objectEraser] : []) + [undo, clear] + (hasInk ? [capture] : [])
         undo.alphaValue = canUndo ? 1 : 0.35
         clear.alphaValue = hasInk ? 1 : 0.35
+        chip.color = inkColor
         func center(_ v: NSView, y: CGFloat, height: CGFloat) {
             v.frame = NSRect(x: (w - v.frame.width) / 2, y: y, width: v.frame.width, height: height)
         }
-        let edit = DockGeometry.editPillHeight
+        let edit = DockGeometry.editBlockHeight(buttons: buttons.count)
         let sizeHeight = DockGeometry.editPillSizeSectionHeight
-        // Undo / Clear keep their spacing (1pt from the pill's ends) inside their block.
+        // Undo / Clear (/ Capture) keep their spacing (1pt from the pill's ends) inside their block.
         let editBase: CGFloat = (size?.onTop ?? false) ? 0 : (showSize ? sizeHeight : 0)
-        center(clear, y: editBase + 1, height: 32)
-        center(undo, y: editBase + edit - 1 - 32, height: 32)
+        var y = editBase + edit - 1
+        for b in buttons {
+            y -= 32
+            center(b, y: y, height: 32)
+        }
         guard let size else {
             closeSlider()
             return
         }
         let sizeBase: CGFloat = size.onTop ? edit : 0
-        // The dot, with the divider on the side facing Undo / Clear.
+        // The dot, with the divider on the side facing the edit block and the color chip
+        // at the pill's far end.
         let dotHeight = DockGeometry.editPillSizeDotHeight
-        let dividerY = size.onTop ? sizeBase : sizeBase + dotHeight
-        dot.frame = NSRect(x: 0, y: size.onTop ? sizeBase + 9 : sizeBase, width: w, height: dotHeight)
-        divider.frame = NSRect(x: 8, y: dividerY, width: w - 16, height: 9)
+        let chipHeight = DockGeometry.editPillColorHeight
+        let dotY = size.onTop ? sizeBase + 9 : sizeBase + chipHeight
+        dot.frame = NSRect(x: 0, y: dotY, width: w, height: dotHeight)
+        divider.frame = NSRect(x: 8, y: size.onTop ? sizeBase : dotY + dotHeight, width: w - 16, height: 9)
+        center(chip, y: size.onTop ? dotY + dotHeight : sizeBase, height: chipHeight)
         dot.state = size
         slider.update(size)
     }

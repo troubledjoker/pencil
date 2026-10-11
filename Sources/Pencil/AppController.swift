@@ -192,9 +192,15 @@ final class AppController {
             }
             return
         }
-        invalidate(store.extend(to: p, time: CACurrentMediaTime()))
+        invalidate(store.extend(to: p, time: CACurrentMediaTime(),
+                                constrain: NSEvent.modifierFlags.contains(.shift)))
         // The in-progress laser stroke can fully fade while the mouse is held still.
         if mode.tool == .laser { startFadeTimer() }
+    }
+
+    /// Shift pressed or released mid-drag: a shape snaps (or unsnaps) without the mouse moving.
+    func modifiersChanged(_ flags: NSEvent.ModifierFlags) {
+        invalidate(store.reshapeCurrent(constrain: flags.contains(.shift), time: CACurrentMediaTime()))
     }
 
     func pointerUp() {
@@ -212,11 +218,7 @@ final class AppController {
             command: mods.contains(.command), control: mods.contains(.control), option: mods.contains(.option))
         else { return false }
         switch command {
-        case .passThrough:
-            // Esc peels one layer at a time: the help, then the size slider or color flyout, then drawing.
-            if shortcutsHUD.isShown { shortcutsHUD.hide(); return true }
-            if escapeInterceptor?() == true { return true }
-            if mode.isDrawing { setMode(.passThrough) }
+        case .passThrough: escape()
         case .tool(let tool): setMode(.draw(tool))
         case .color(let index): setColor(index: index)
         case .undo: undo()
@@ -228,6 +230,14 @@ final class AppController {
         case .captureDrawing: captureDrawing()
         }
         return true
+    }
+
+    /// Esc while drawing. It peels one layer at a time: the help, then the size slider or
+    /// color flyout, then drawing (ink stays, clicks go through).
+    func escape() {
+        if shortcutsHUD.isShown { shortcutsHUD.hide(); return }
+        if escapeInterceptor?() == true { return }
+        if mode.isDrawing { setMode(.passThrough) }
     }
 
     /// ⌥5: pick an area and start recording, or stop the running recording.

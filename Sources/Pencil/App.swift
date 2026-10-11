@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dock: DockController?
     private var statusMenu: StatusMenuController?
     private var hotkeys: HotkeyCenter?
+    /// Grabs Esc while a drawing tool is on (see `registerHotkeys`).
+    private var grabEscape: ((Bool) -> Void)?
     private lazy var quitConfirmation = QuitConfirmation(controller: controller)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -35,9 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dock.onQuit = confirmQuit
         self.statusMenu = statusMenu
 
-        controller.onStateChange = { [weak dock, weak statusMenu] in
+        controller.onStateChange = { [weak self, weak dock, weak statusMenu] in
             dock?.refresh()
             statusMenu?.refresh()
+            guard let self else { return }
+            self.grabEscape?(self.controller.mode.isDrawing)
         }
         ClipboardHistoryController.shared.start()
         // Captures exclude Pencil's UI via ScreenCaptureKit, so nothing is hidden; only the
@@ -101,9 +105,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 taken.append(g.label)
             }
         }
+        // Esc while drawing, as a hotkey: it works on the first press wherever the keyboard
+        // focus is (the overlay only gets keys while it's the key window). Only grabbed while
+        // a drawing tool is on; the rest of the time Esc belongs to the user's apps.
+        grabEscape = h.registerSwitchable(keyCode: Int(Shortcuts.escapeKeyCode), modifiers: 0) {
+            Self.escapeWhileDrawing(c)
+        }
+        grabEscape?(c.mode.isDrawing)
         self.hotkeys = h
         warnOnceAboutSystemConflicts(conflicts, toast: c.toast)
         warnOnceAboutTakenKeys(taken, toast: c.toast)
+    }
+
+    /// Esc from the hotkey. A Pencil window that has the keyboard and handles Esc itself
+    /// (the area picker, the clipboard sidebar, the quit dialog) gets it as a normal key
+    /// press; otherwise it stops drawing.
+    private static func escapeWhileDrawing(_ c: AppController) {
+        if let key = NSApp.keyWindow, !(key is OverlayWindow), key.isVisible,
+           let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                        timestamp: ProcessInfo.processInfo.systemUptime,
+                                        windowNumber: key.windowNumber, context: nil,
+                                        characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}",
+                                        isARepeat: false, keyCode: Shortcuts.escapeKeyCode) {
+            key.sendEvent(event)
+            return
+        }
+        c.escape()
     }
 
     private static func carbonModifiers(_ mods: Int) -> UInt32 {
