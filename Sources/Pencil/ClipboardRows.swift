@@ -114,7 +114,7 @@ final class ClipboardTextButton: NSButton, PointerCursorProviding {
     var pointerCursor: NSCursor { .pointingHand }
     var onClick: (() -> Void)?
 
-    init(_ title: String, destructive: Bool = false) {
+    init(_ title: String, destructive: Bool = false, accent: Bool = false) {
         super.init(frame: .zero)
         isBordered = false
         bezelStyle = .regularSquare
@@ -123,13 +123,19 @@ final class ClipboardTextButton: NSButton, PointerCursorProviding {
         wantsLayer = true
         layer?.cornerRadius = 6
         layer?.backgroundColor = (destructive ? NSColor.systemRed.withAlphaComponent(0.75)
-                                              : NSColor.white.withAlphaComponent(0.1)).cgColor
+                                  : accent ? ClipboardStyle.accent
+                                  : NSColor.white.withAlphaComponent(0.1)).cgColor
+        target = self
+        action = #selector(fire)
+        setTitle(title)
+    }
+
+    /// Changes the title and resizes to fit it (the right edge is the caller's to keep).
+    func setTitle(_ title: String) {
         attributedTitle = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
             .foregroundColor: NSColor.white.withAlphaComponent(0.9),
         ])
-        target = self
-        action = #selector(fire)
         sizeToFit()
         frame.size.width += 16
         frame.size.height = 22
@@ -141,6 +147,40 @@ final class ClipboardTextButton: NSButton, PointerCursorProviding {
     @objc private func fire() { onClick?() }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+// MARK: - Select mode check
+
+/// The round check at the left of a row in select mode: an empty ring, a green check, or
+/// a green minus for a folder that is only partly picked.
+final class ClipboardCheckLayer: CALayer {
+    static let side: CGFloat = 18
+    /// How far a row's content moves right to make room for the check.
+    static let inset: CGFloat = 26
+
+    override init() {
+        super.init()
+        contentsGravity = .center
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// nil hides the check (not in select mode).
+    func set(_ state: ClipboardSelection.State?) {
+        isHidden = state == nil
+        guard let state else { return }
+        let name: String, colors: [NSColor]
+        switch state {
+        case .none: (name, colors) = ("circle", [NSColor.white.withAlphaComponent(0.4)])
+        case .all: (name, colors) = ("checkmark.circle.fill", [.white, ClipboardStyle.accent])
+        case .some: (name, colors) = ("minus.circle.fill", [.white, ClipboardStyle.accent])
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium).applying(.init(paletteColors: colors))
+        contents = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+    }
 }
 
 // MARK: - Row
@@ -246,6 +286,17 @@ final class ClipboardRowCell: NSTableCellView {
     private var isPinned = false
     /// Extra left inset for members of an expanded burst.
     var indent: CGFloat = 0 { didSet { needsLayout = true } }
+    private let check = ClipboardCheckLayer()
+    /// Select mode: picked or not. nil outside select mode.
+    var checkState: ClipboardSelection.State? {
+        didSet {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            check.set(checkState)
+            CATransaction.commit()
+            needsLayout = true
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -267,6 +318,8 @@ final class ClipboardRowCell: NSTableCellView {
         thumbBox.addSublayer(symbolLayer)
         thumbBox.addSublayer(playBadge)
         layer?.addSublayer(thumbBox)
+        check.isHidden = true
+        layer?.addSublayer(check)
 
         pinBadge.image = ClipboardStyle.symbol("pin.fill", size: 9, color: NSColor.white.withAlphaComponent(0.55))
         for v in [title, subtitle, pinBadge, pinButton, deleteButton] as [NSView] { addSubview(v) }
@@ -281,7 +334,7 @@ final class ClipboardRowCell: NSTableCellView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         let s = window?.backingScaleFactor ?? 2
-        for l in [thumbBox, thumbLayer, symbolLayer, playBadge] { l.contentsScale = s }
+        for l in [thumbBox, thumbLayer, symbolLayer, playBadge, check] { l.contentsScale = s }
     }
 
     /// `matchedInImage`: the current search matched this item only through its OCR text.
@@ -334,15 +387,18 @@ final class ClipboardRowCell: NSTableCellView {
         super.layout()
         let h = bounds.height
         let side: CGFloat = 40
+        let lead = 14 + indent + (checkState == nil ? 0 : ClipboardCheckLayer.inset)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        thumbBox.frame = CGRect(x: 14 + indent, y: (h - side) / 2, width: side, height: side)
+        let c = ClipboardCheckLayer.side
+        check.frame = CGRect(x: lead - ClipboardCheckLayer.inset + 2, y: (h - c) / 2, width: c, height: c)
+        thumbBox.frame = CGRect(x: lead, y: (h - side) / 2, width: side, height: side)
         thumbLayer.frame = thumbBox.bounds
         symbolLayer.frame = thumbBox.bounds
         playBadge.frame = thumbBox.bounds
         CATransaction.commit()
 
-        let x: CGFloat = 14 + indent + side + 10
+        let x: CGFloat = lead + side + 10
         let trailing: CGFloat = isHovered ? 62 : (isPinned ? 26 : 12)
         let w = max(20, bounds.width - x - trailing)
         title.frame = NSRect(x: x, y: h / 2 + 1, width: w, height: 17)
@@ -372,11 +428,24 @@ final class ClipboardFolderCell: NSTableCellView {
     private let subtitle = ClipboardStyle.label(size: 11, color: ClipboardStyle.secondary)
     private var ids: [String] = []
     private var isOpen = false
+    private let check = ClipboardCheckLayer()
+    /// Select mode: how much of the folder is picked. nil outside select mode.
+    var checkState: ClipboardSelection.State? {
+        didSet {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            check.set(checkState)
+            CATransaction.commit()
+            needsLayout = true
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         identifier = Self.identifier
         wantsLayer = true
+        check.isHidden = true
+        layer?.addSublayer(check)
         tile.cornerRadius = 10
         tile.masksToBounds = true
         tile.backgroundColor = NSColor.white.withAlphaComponent(0.09).cgColor
@@ -422,7 +491,7 @@ final class ClipboardFolderCell: NSTableCellView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         let s = window?.backingScaleFactor ?? 2
-        ([tile, highlight, badge, badgeBack] + cells + snippets).forEach { $0.contentsScale = s }
+        ([tile, highlight, badge, badgeBack, check] + cells + snippets).forEach { $0.contentsScale = s }
     }
 
     func configure(_ group: ClipboardGroup, open: Bool, thumbnails: ClipboardThumbnails, now: Date) {
@@ -471,9 +540,12 @@ final class ClipboardFolderCell: NSTableCellView {
         super.layout()
         let h = bounds.height
         let side = Self.tileSide
+        let lead = 14 + (checkState == nil ? 0 : ClipboardCheckLayer.inset)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        tile.frame = CGRect(x: 14, y: (h - side) / 2, width: side, height: side)
+        let cs = ClipboardCheckLayer.side
+        check.frame = CGRect(x: lead - ClipboardCheckLayer.inset + 2, y: (h - cs) / 2, width: cs, height: cs)
+        tile.frame = CGRect(x: lead, y: (h - side) / 2, width: side, height: side)
         highlight.frame = tile.bounds
         let pad: CGFloat = 4, gap: CGFloat = 2.5
         let c = (side - pad * 2 - gap) / 2
@@ -489,7 +561,7 @@ final class ClipboardFolderCell: NSTableCellView {
         badge.frame = CGRect(x: 0, y: 1, width: bw, height: bh - 2)
         CATransaction.commit()
 
-        let x: CGFloat = 14 + side + 10
+        let x: CGFloat = lead + side + 10
         let w = max(20, bounds.width - x - 12)
         title.frame = NSRect(x: x, y: h / 2 + 1, width: w, height: 17)
         subtitle.frame = NSRect(x: x, y: h / 2 - 16, width: w, height: 15)
@@ -525,12 +597,13 @@ final class ClipboardShowMoreCell: NSTableCellView {
 // MARK: - Current clipboard card
 
 /// The larger card at the top of the panel: the actual image (aspect-fit), the first
-/// lines of text, or the file's thumbnail and name, plus when it was copied. It is a drag
-/// source (drag the current item into another app) and a drop target (drop a row on it
-/// to make that row current).
+/// lines of text, or the file's thumbnail and name, plus when it was copied. When a group
+/// is on the clipboard it shows a fanned stack of its members instead. It is a drag
+/// source (drag the current item, or the whole group, into another app) and a drop target
+/// (drop a row on it to make that row current).
 final class ClipboardCurrentCard: NSView, NSDraggingSource {
     var onDropRow: ((String) -> Void)?
-    var dragItemProvider: (() -> NSPasteboardItem?)?
+    var dragItemsProvider: (() -> [NSPasteboardItem])?
 
     private let caption = ClipboardStyle.label(size: 10.5, weight: .semibold, color: NSColor.white.withAlphaComponent(0.5))
     private let copiedBadge = ClipboardCopiedBadge()
@@ -543,6 +616,7 @@ final class ClipboardCurrentCard: NSView, NSDraggingSource {
     private let fileInfo = ClipboardStyle.label(size: 11, color: ClipboardStyle.secondary)
     private let footer = ClipboardStyle.label(size: 11, color: ClipboardStyle.secondary)
     private let empty = ClipboardStyle.label(size: 12, color: ClipboardStyle.secondary)
+    private let stack = ClipboardStackView()
     private var item: ClipboardItem?
     private var dropHighlight = false { didSet { needsDisplay = true } }
     private var downEvent: NSEvent?
@@ -576,7 +650,7 @@ final class ClipboardCurrentCard: NSView, NSDraggingSource {
         fileThumb.imageScaling = .scaleProportionallyUpOrDown
         empty.stringValue = "Copy something and it shows up here."
         empty.alignment = .center
-        for v in [caption, copiedBadge, imageView, textLabel, fileThumb, fileName, fileInfo, footer, empty] as [NSView] {
+        for v in [caption, copiedBadge, imageView, textLabel, fileThumb, fileName, fileInfo, footer, empty, stack] as [NSView] {
             addSubview(v)
         }
         registerForDraggedTypes([ClipboardHistoryController.rowDragType])
@@ -596,8 +670,9 @@ final class ClipboardCurrentCard: NSView, NSDraggingSource {
     @discardableResult
     func show(_ item: ClipboardItem?, image: NSImage?, width: CGFloat) -> CGFloat {
         self.item = item
+        caption.stringValue = "CURRENT CLIPBOARD"
         let inner = width - Self.pad * 2
-        [imageView, textLabel, fileThumb, fileName, fileInfo, empty].forEach { $0.isHidden = true }
+        [imageView, textLabel, fileThumb, fileName, fileInfo, empty, stack].forEach { $0.isHidden = true }
         footer.isHidden = item == nil
 
         var y = Self.pad // build bottom-up
@@ -663,8 +738,39 @@ final class ClipboardCurrentCard: NSView, NSDraggingSource {
         return height
     }
 
+    /// A group on the clipboard: its members as a fanned stack of cards (newest on top),
+    /// "N ITEMS" in the caption, and what kinds they are under it. Returns the height.
+    @discardableResult
+    func showGroup(_ members: [ClipboardItem], images: [String: NSImage], width: CGFloat) -> CGFloat {
+        item = members.last
+        let inner = width - Self.pad * 2
+        [imageView, textLabel, fileThumb, fileName, fileInfo, empty].forEach { $0.isHidden = true }
+        var y = Self.pad
+        footer.isHidden = false
+        let when = members.last.map { ClipboardFormat.relative($0.copiedAt) } ?? ""
+        footer.stringValue = "Copied \(when.prefix(1).lowercased() + when.dropFirst()) · "
+            + ClipboardFormat.groupSummary(members)
+        footer.frame = NSRect(x: Self.pad, y: y, width: inner, height: 15)
+        y += 15 + 8
+        stack.isHidden = false
+        stack.frame = NSRect(x: Self.pad, y: y, width: inner, height: ClipboardStackView.height)
+        stack.show(members, images: images)
+        y += ClipboardStackView.height + 8
+        caption.stringValue = "CURRENT CLIPBOARD · \(members.count) ITEMS"
+        caption.frame = NSRect(x: Self.pad, y: y, width: inner - 70, height: 14)
+        copiedBadge.frame = NSRect(x: width - Self.pad - copiedBadge.frame.width + 4, y: y - 4,
+                                   width: copiedBadge.frame.width, height: copiedBadge.frame.height)
+        y += 14 + Self.pad - 2
+        needsDisplay = true
+        return y
+    }
+
     /// Updates the picture once it has loaded, if the card still shows that item.
     func setImage(_ image: NSImage?, for id: String) {
+        if !stack.isHidden {
+            stack.setImage(image, for: id)
+            return
+        }
         guard item?.id == id else { return }
         imageView.image = image
         fileThumb.image = image
@@ -731,16 +837,24 @@ final class ClipboardCurrentCard: NSView, NSDraggingSource {
     override func mouseDown(with event: NSEvent) { downEvent = event }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let down = downEvent, item != nil, let pbItem = dragItemProvider?() else { return }
+        guard let down = downEvent, item != nil, let pbItems = dragItemsProvider?(), !pbItems.isEmpty else { return }
         let a = down.locationInWindow, b = event.locationInWindow
         guard DockGeometry.isDrag(from: a, to: b) else { return }
         downEvent = nil
-        let dragging = NSDraggingItem(pasteboardWriter: pbItem)
         let source = imageView.isHidden ? (fileThumb.isHidden ? nil : fileThumb) : imageView
         let rect = source?.frame ?? NSRect(x: bounds.midX - 24, y: bounds.midY - 24, width: 48, height: 48)
         let picture = (source?.image).map { img -> NSImage in img } ?? ClipboardStyle.symbol("doc.on.clipboard", size: 28)
-        dragging.setDraggingFrame(rect, contents: picture)
-        beginDraggingSession(with: [dragging], event: event, source: self)
+        // A group drags every member; each one gets its own card from the stack.
+        let items = pbItems.enumerated().map { i, pbItem -> NSDraggingItem in
+            let dragging = NSDraggingItem(pasteboardWriter: pbItem)
+            if !stack.isHidden, let card = stack.dragImage(at: i) {
+                dragging.setDraggingFrame(convert(card.frame, from: stack), contents: card.image)
+            } else {
+                dragging.setDraggingFrame(rect.offsetBy(dx: CGFloat(i) * 6, dy: CGFloat(-i) * 6), contents: picture)
+            }
+            return dragging
+        }
+        beginDraggingSession(with: items, event: event, source: self)
     }
 
     override func mouseUp(with event: NSEvent) { downEvent = nil }
@@ -774,6 +888,185 @@ final class ClipboardCurrentCard: NSView, NSDraggingSource {
         else { return false }
         onDropRow?(id)
         return true
+    }
+}
+
+// MARK: - Group stack
+
+/// The members of a group on the clipboard as a fanned deck of small cards, overlapping
+/// left to right in paste order with the newest on top, each turned a few degrees. At
+/// most `maxCards` show; a "+N" chip counts the rest.
+final class ClipboardStackView: NSView {
+    static let height: CGFloat = 124
+    static let maxCards = 5
+    private static let cardSize = CGSize(width: 146, height: 96)
+
+    private struct Card {
+        let id: String
+        let holder: CALayer   // shadow + rotation
+        let face: CALayer     // clipped picture
+        let symbol: CALayer
+        let snippet: CATextLayer
+        let play: CALayer
+        let dim: CALayer
+    }
+
+    private var cards: [Card] = []
+    private var memberCount = 0
+    private let more = CATextLayer()
+    private let moreBack = CALayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        moreBack.backgroundColor = NSColor(white: 0.28, alpha: 0.95).cgColor
+        moreBack.borderWidth = 0.5
+        moreBack.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
+        moreBack.zPosition = 100
+        more.fontSize = 10.5
+        more.font = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
+        more.alignmentMode = .center
+        more.foregroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
+        moreBack.addSublayer(more)
+        layer?.addSublayer(moreBack)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// `members` oldest first; the newest `maxCards` are shown.
+    func show(_ members: [ClipboardItem], images: [String: NSImage]) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cards.forEach { $0.holder.removeFromSuperlayer() }
+        cards = []
+        memberCount = members.count
+        let shown = Array(members.suffix(Self.maxCards))
+        let scale = window?.backingScaleFactor ?? 2
+        for (i, m) in shown.enumerated() {
+            let card = makeCard(m, image: images[m.id], scale: scale)
+            card.holder.zPosition = CGFloat(i)
+            layer?.addSublayer(card.holder)
+            cards.append(card)
+        }
+        let hidden = members.count - shown.count
+        moreBack.isHidden = hidden <= 0
+        more.string = "+\(hidden)"
+        more.contentsScale = scale
+        moreBack.contentsScale = scale
+        CATransaction.commit()
+        needsLayout = true
+    }
+
+    func setImage(_ image: NSImage?, for id: String) {
+        guard let card = cards.first(where: { $0.id == id }), let image else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        card.face.contents = image
+        card.symbol.isHidden = true
+        CATransaction.commit()
+    }
+
+    /// The card for pasteboard item `i` (paste order), for a drag: its frame and picture.
+    func dragImage(at i: Int) -> (frame: NSRect, image: NSImage)? {
+        let offset = memberCount - cards.count // members before the shown cards
+        guard i - offset >= 0, i - offset < cards.count else { return nil }
+        let card = cards[i - offset]
+        let image = (card.face.contents as? NSImage) ?? ClipboardStyle.symbol("doc.on.clipboard", size: 28)
+        guard let image else { return nil }
+        return (card.holder.frame, image)
+    }
+
+    private func makeCard(_ item: ClipboardItem, image: NSImage?, scale: CGFloat) -> Card {
+        let size = Self.cardSize
+        let holder = CALayer()
+        holder.bounds = CGRect(origin: .zero, size: size)
+        holder.shadowColor = NSColor.black.cgColor
+        holder.shadowOpacity = 0.45
+        holder.shadowRadius = 6
+        holder.shadowOffset = CGSize(width: 0, height: -2)
+        holder.shadowPath = CGPath(roundedRect: holder.bounds, cornerWidth: 7, cornerHeight: 7, transform: nil)
+
+        let face = CALayer()
+        face.frame = holder.bounds
+        face.cornerRadius = 7
+        face.masksToBounds = true
+        face.backgroundColor = NSColor(white: 0.17, alpha: 1).cgColor
+        face.borderWidth = 0.5
+        face.borderColor = NSColor.white.withAlphaComponent(0.22).cgColor
+        face.contentsGravity = .resizeAspectFill
+        face.contents = image
+        holder.addSublayer(face)
+
+        let symbol = CALayer()
+        symbol.frame = face.bounds
+        symbol.contentsGravity = .center
+        symbol.contents = ClipboardStyle.symbol(ClipboardStyle.placeholderSymbol(for: item), size: 22)
+        symbol.isHidden = image != nil || item.kind == .text
+        face.addSublayer(symbol)
+
+        let snippet = CATextLayer()
+        snippet.frame = face.bounds.insetBy(dx: 8, dy: 7)
+        snippet.fontSize = 9.5
+        snippet.font = NSFont.systemFont(ofSize: 9.5)
+        snippet.foregroundColor = NSColor.white.withAlphaComponent(0.8).cgColor
+        snippet.isWrapped = true
+        snippet.truncationMode = .end
+        snippet.string = String((item.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+        snippet.isHidden = item.kind != .text
+        face.addSublayer(snippet)
+
+        let play = CALayer()
+        play.frame = face.bounds
+        play.contentsGravity = .center
+        play.contents = ClipboardStyle.symbol("play.circle.fill", size: 20, color: .white)
+        play.shadowOpacity = 0.5
+        play.shadowRadius = 2
+        play.shadowOffset = .zero
+        play.isHidden = !item.isVideo
+        face.addSublayer(play)
+
+        let dim = CALayer()
+        dim.frame = face.bounds
+        dim.backgroundColor = NSColor.black.cgColor
+        face.addSublayer(dim)
+
+        for l in [holder, face, symbol, snippet, play, dim] { l.contentsScale = scale }
+        return Card(id: item.id, holder: holder, face: face, symbol: symbol, snippet: snippet, play: play, dim: dim)
+    }
+
+    override func layout() {
+        super.layout()
+        let n = cards.count
+        guard n > 0 else { return }
+        let size = Self.cardSize
+        let w = bounds.width
+        let step = n > 1 ? min(44, (w - size.width - 16) / CGFloat(n - 1)) : 0
+        let total = size.width + step * CGFloat(n - 1)
+        let x0 = (w - total) / 2
+        let mid = CGFloat(n - 1) / 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (i, card) in cards.enumerated() {
+            let t = CGFloat(i) - mid
+            // Fanned like a hand of cards: turned from the center, the outer ones a bit lower.
+            card.holder.position = CGPoint(x: x0 + size.width / 2 + CGFloat(i) * step,
+                                           y: bounds.midY - abs(t) * 3)
+            card.holder.transform = CATransform3DMakeRotation(-t * 4 * .pi / 180, 0, 0, 1)
+            // Cards further back are a little darker, so the stack reads as depth.
+            card.dim.opacity = n > 1 ? Float(CGFloat(n - 1 - i) / CGFloat(n - 1)) * 0.35 : 0
+        }
+        let label = more.string as? String ?? ""
+        let bw = CGFloat(label.count) * 7 + 12, bh: CGFloat = 18
+        let top = cards[n - 1].holder.frame
+        moreBack.frame = CGRect(x: min(w - bw, top.maxX - bw + 6), y: min(bounds.height - bh, top.maxY - bh + 4),
+                                width: bw, height: bh)
+        moreBack.cornerRadius = bh / 2
+        more.frame = CGRect(x: 0, y: 2, width: bw, height: bh - 4)
+        CATransaction.commit()
     }
 }
 

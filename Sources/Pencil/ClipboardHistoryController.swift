@@ -29,6 +29,9 @@ final class ClipboardHistoryController {
     private let ocr = ClipboardOCR()
     private var panel: ClipboardPanelController?
     private var started = false
+    /// The batch whose items are on the pasteboard right now (a copied group or burst, or
+    /// a burst still being captured). Any other copy clears it.
+    private var currentBatchID: String?
     private var saveScheduled = false
 
     private enum Key {
@@ -167,6 +170,7 @@ final class ClipboardHistoryController {
     }
 
     private func handle(_ capture: ClipboardCapture, batchID: String? = nil) {
+        currentBatchID = batchID
         let disk = self.disk
         work.async {
             let fingerprint = ClipboardProcessor.fingerprint(capture)
@@ -334,33 +338,80 @@ final class ClipboardHistoryController {
     func copy(id: String) -> CopyResult {
         guard let item = store.item(id: id) else { return .notFound }
         guard writeToPasteboard(item) else { return .missingFiles }
+        currentBatchID = nil
         store.promote(id: id, at: Date())
         changed()
         return .copied
     }
 
-    /// Makes a whole burst the current clipboard: all its files on the pasteboard as
-    /// separate items (capture order), the group moved to the top.
+    /// Makes a whole burst or group the current clipboard: all its files on the pasteboard
+    /// as separate items (capture order), any text joined into one more item, the group
+    /// moved to the top.
     @discardableResult
     func copyBatch(_ batchID: String) -> CopyResult {
         let members = store.batchItems(batchID)
         guard !members.isEmpty else { return .notFound }
+        let (urls, items) = pasteboardItems(for: members)
+        guard !items.isEmpty else { return .missingFiles }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.writeObjects(items)
+        watcher.ignoreCurrentChange()
+        currentBatchID = batchID
+        store.promoteBatch(batchID, at: Date())
+        CaptureBatch.shared.setLast(id: batchID, urls: urls)
+        changed()
+        return .copied
+    }
+
+    /// Select mode's Copy: the picked items become one group (a folder in the history) and
+    /// all of them go on the clipboard together. One item is a plain copy; only text is
+    /// joined into a single text copy (saved as a new item).
+    @discardableResult
+    func copySelection(_ ids: [String]) -> CopyResult {
+        let picked = ids.compactMap(store.item(id:))
+        guard !picked.isEmpty else { return .notFound }
+        if picked.count == 1 { return copy(id: picked[0].id) }
+        if picked.allSatisfy({ $0.kind == .text }) {
+            let text = ClipboardJoin.text(picked.sorted { $0.firstCopiedAt < $1.firstCopiedAt }.map(fullText(of:)))
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+            watcher.pollNow() // saved like any other copy, and becomes current
+            return .copied
+        }
+        // Check the files before regrouping anything.
+        guard !pasteboardItems(for: picked).items.isEmpty else { return .missingFiles }
+        let batchID = UUID().uuidString
+        store.group(picked.map(\.id), as: batchID)
+        return copyBatch(batchID)
+    }
+
+    /// Items in the current group (oldest first) while a group of two or more is what
+    /// ⌘V pastes; nil otherwise.
+    var currentGroup: [ClipboardItem]? {
+        guard let id = currentBatchID, store.current?.batchID == id else { return nil }
+        let members = store.batchItems(id)
+        return members.count > 1 ? members : nil
+    }
+
+    /// One pasteboard item per file or image (capture order), plus the text members joined
+    /// into one text item at the end.
+    private func pasteboardItems(for members: [ClipboardItem]) -> (urls: [URL], items: [NSPasteboardItem]) {
         let urls: [URL] = members.compactMap { m in
             if let path = m.filePaths.first(where: { FileManager.default.fileExists(atPath: $0) }) {
                 return URL(fileURLWithPath: path)
             }
             return disk.blobURL(m.imageFile, of: m.id)
         }
-        let items = CaptureBatch.pasteboardItems(for: urls)
-        guard !items.isEmpty else { return .missingFiles }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.writeObjects(items)
-        watcher.ignoreCurrentChange()
-        store.promoteBatch(batchID, at: Date())
-        CaptureBatch.shared.setLast(id: batchID, urls: urls)
-        changed()
-        return .copied
+        var items = CaptureBatch.pasteboardItems(for: urls)
+        let text = ClipboardJoin.text(members.filter { $0.kind == .text }.map(fullText(of:)))
+        if !text.isEmpty {
+            let item = NSPasteboardItem()
+            item.setString(text, forType: .string)
+            items.append(item)
+        }
+        return (urls, items)
     }
 
     private func writeToPasteboard(_ item: ClipboardItem) -> Bool {
@@ -405,6 +456,7 @@ final class ClipboardHistoryController {
     }
 
     private func syncPasteboardToTop() {
+        currentBatchID = nil
         if let top = store.current {
             if writeToPasteboard(top) {
                 store.promote(id: top.id, at: Date())

@@ -42,6 +42,30 @@ anything you copied earlier.
   - Clicking a burst folder also makes the whole burst current (all of its files on the
     clipboard).
   - While searching, matches show as plain rows, with no folders.
+- **Select several and copy them together.** The check button in the header (left of the
+  eye), or ⌘A, turns on select mode:
+  - Each row gets a round check on its left. Clicking a row, or pressing Space on it,
+    picks or unpicks it instead of copying. The current item is listed too, so it can be
+    picked.
+  - Clicking a folder picks all of its members. A partly picked folder shows a minus.
+  - ⌘A picks every item shown, or unpicks them all when they're already picked.
+  - Picks survive searching, so you can search, pick, search again, pick more.
+  - The footer shows "N selected" with **Cancel** and **Copy N**. Copy, Return or ⌘C puts
+    them all on the clipboard at once, and Return also closes the sidebar. Esc or Cancel
+    leaves select mode without copying.
+  - What goes on the clipboard: one item per image or file, oldest first, so ⌘V into a
+    chat or Finder attaches every one. Any text items are joined, with a blank line
+    between them, into one extra text item. If you pick only text, it's pasted as one
+    joined text, and that text is saved as a new history item.
+  - The copied items become one folder in the history, like a burst, so clicking it later
+    copies them all again. An item that was in another burst moves to the new folder.
+  - ⌥⇧V then pastes them one at a time, for apps that take one image per paste.
+- **A group on the clipboard.** When a group (picked items or a burst) is what ⌘V pastes,
+  the current card shows it as a fanned stack of small cards instead of one picture. The
+  newest is on top, and the ones further back are slightly darker. The card shows the 5
+  newest, with a "+N" chip for the rest. Its caption reads "CURRENT CLIPBOARD · N ITEMS"
+  and the line under it says what's in it, e.g. "3 images, 2 videos". Dragging the card
+  out drags every member. Copying anything else brings back the single-item card.
 - **Current card feedback.** The current-clipboard card always has a thin green border (this
   is what ⌘V pastes). When something becomes current by click, Return, dragging to the top,
   or opening a burst:
@@ -68,9 +92,11 @@ anything you copied earlier.
   | ↑ / ↓ | Select |
   | Return | Copy the selected item and close |
   | ⌘C | Copy the selected item, keep the sidebar open |
-  | ⌫ | Delete the selected item |
+  | ⌘A | Select mode: pick every item shown (again: unpick them) |
+  | Space | Select mode: pick or unpick the highlighted row |
+  | ⌫ | Delete the selected item (does nothing in select mode) |
   | ⌘F, or just start typing | Search |
-  | Esc | Clear the search, or close |
+  | Esc | Clear the search, leave select mode, or close |
 
 - **Pause history** (the eye button in the header) stops saving new copies until you resume.
   While it's paused, the button shows a crossed-out eye and a banner under the header says

@@ -4,10 +4,14 @@ import PencilCore
 /// The history sidebar: the full height of the screen's visible frame on the right edge,
 /// solid near-black, sliding in and out from the edge.
 ///
-/// Top to bottom: header (title, pause history, collapse), a banner while history is
-/// paused, the search field, the current-clipboard card (hidden while searching), the
+/// Top to bottom: header (title, select, pause history, collapse), a banner while history
+/// is paused, the search field, the current-clipboard card (hidden while searching), the
 /// history list (a view-based NSTableView, so 1000 items cost only the visible rows),
 /// and a footer with the count and "Clear history" (inline confirm).
+///
+/// Select mode (the check button): clicking rows picks them instead of copying, and the
+/// footer becomes "N selected · Cancel · Copy N". Copy puts them all on the clipboard as
+/// one group, and the card shows the group as a fanned stack.
 ///
 /// It's a non-activating panel that CAN become key: opening it takes the keyboard
 /// without activating Pencil, and closing it hands focus back to the previous app.
@@ -45,6 +49,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
     private let background = ClipboardSidebarBackground()
     private let titleLabel = ClipboardStyle.label(size: 13, weight: .semibold)
     private let pauseButton = ClipboardIconButton(symbol: "eye", size: 13, label: "Pause saving clipboard history")
+    private let selectButton = ClipboardIconButton(symbol: "checkmark.circle", size: 13, label: "Select items to copy together")
     private let closeButton = ClipboardIconButton(symbol: "sidebar.right", size: 13, label: "Close")
     private let banner = NSView()
     private let bannerLabel = ClipboardStyle.label(size: 11.5, weight: .medium)
@@ -59,6 +64,8 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
     private let confirmLabel = ClipboardStyle.label(size: 11.5, weight: .medium)
     private let confirmCancel = ClipboardTextButton("Cancel")
     private let confirmClear = ClipboardTextButton("Clear", destructive: true)
+    private let selectCancel = ClipboardTextButton("Cancel")
+    private let selectCopy = ClipboardTextButton("Copy", accent: true)
     private let preview = ClipboardPreviewPopup()
 
     private var rows: [Row] = []
@@ -67,6 +74,9 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
     /// The query the table was last fully reloaded for (row notes depend on it).
     private var renderedQuery = ""
     private var confirming = false
+    /// Select mode: row clicks pick rows (`selection`) instead of copying them.
+    private var selecting = false
+    private var selection = ClipboardSelection()
     private var cardHeight: CGFloat = 80
     private var previousApp: NSRunningApplication?
     private var monitors: [Any] = []
@@ -106,6 +116,11 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
             guard let self else { return }
             self.history.setPaused(!self.history.isPaused)
         }
+        selectButton.hint = "Select items to copy together  ⌘A"
+        selectButton.onClick = { [weak self] in
+            guard let self else { return }
+            self.setSelecting(!self.selecting)
+        }
         closeButton.hint = "Close  " + ClipboardHistoryController.hotkeyLabel
         closeButton.onClick = { [weak self] in self?.close(restoreFocus: true) }
 
@@ -126,9 +141,10 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         search.sendsSearchStringImmediately = true
         search.focusRingType = .none
 
-        card.dragItemProvider = { [weak self] in
-            guard let self, let current = self.history.store.current else { return nil }
-            return self.history.dragPasteboardItem(for: current)
+        card.dragItemsProvider = { [weak self] in
+            guard let self else { return [] }
+            if let group = self.history.currentGroup { return group.map(self.history.dragPasteboardItem(for:)) }
+            return self.history.store.current.map { [self.history.dragPasteboardItem(for: $0)] } ?? []
         }
         card.onDropRow = { [weak self] id in
             guard let self else { return }
@@ -161,7 +177,11 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         table.onDelete = { [weak self] in self?.deleteSelection() }
         table.onEscape = { [weak self] in self?.escape() }
         table.onFind = { [weak self] in self?.focusSearch(typing: nil) }
-        table.onType = { [weak self] text in self?.focusSearch(typing: text) }
+        table.onType = { [weak self] text in
+            guard let self else { return }
+            if self.selecting, text == " " { self.toggleHighlighted() } else { self.focusSearch(typing: text) }
+        }
+        table.onSelectAll = { [weak self] in self?.selectAllShown() }
         table.onArrow = { [weak self] open in self?.arrow(open: open) }
 
         scroll.documentView = table
@@ -181,9 +201,11 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
             self?.history.clearHistory()
             self?.setConfirming(false)
         }
+        selectCancel.onClick = { [weak self] in self?.setSelecting(false) }
+        selectCopy.onClick = { [weak self] in self?.copySelection(close: false) }
 
-        for v in [titleLabel, pauseButton, closeButton, banner, search, card, scroll, emptyLabel, countLabel,
-                  clearButton, confirmLabel, confirmCancel, confirmClear] as [NSView] {
+        for v in [titleLabel, selectButton, pauseButton, closeButton, banner, search, card, scroll, emptyLabel, countLabel,
+                  clearButton, confirmLabel, confirmCancel, confirmClear, selectCancel, selectCopy] as [NSView] {
             background.addSubview(v)
         }
         window.initialFirstResponder = table
@@ -204,6 +226,8 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         search.stringValue = ""
         openFolder = nil
         visibleCount = ClipboardStore.initialVisibleCount
+        selecting = false
+        selection = ClipboardSelection()
         confirming = false
         setConfirming(false)
 
@@ -349,7 +373,8 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         var entries = ClipboardGrouping.entries(store.items)
         // The current item is the card. On its own it isn't listed; if it has look-alikes,
         // their folder (which includes it) leads the list.
-        if case .single? = entries.first { entries.removeFirst() }
+        // In select mode it's listed too, so it can be picked with the rest.
+        if !selecting, case .single? = entries.first { entries.removeFirst() }
         entryCount = entries.count
         let shown = entries.prefix(visibleCount)
         if let openFolder, !shown.contains(where: { $0.key == openFolder }) { self.openFolder = nil }
@@ -369,6 +394,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
     }
 
     private func reload() {
+        if !selection.isEmpty { selection.keep(only: Set(history.store.items.map(\.id))) }
         let selectedID = selectedItem()?.id
         let selectedRow = table.selectedRow
         let old = rows
@@ -475,6 +501,19 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         // among them if it matches.
         card.isHidden = isSearching
         guard !isSearching else { return }
+        if let group = history.currentGroup {
+            let thumbs = history.thumbnails
+            var images: [String: NSImage] = [:]
+            for m in group where m.kind != .text {
+                if let image = thumbs.cached(m, size: .large) ?? thumbs.cached(m, size: .row) { images[m.id] = image }
+            }
+            cardHeight = card.showGroup(group, images: images, width: Self.width - 20)
+            for m in group.suffix(ClipboardStackView.maxCards) where m.kind != .text && thumbs.cached(m, size: .large) == nil {
+                let id = m.id
+                thumbs.load(m, size: .large) { [weak self] image in self?.card.setImage(image, for: id) }
+            }
+            return
+        }
         let current = history.store.current
         let image = current.flatMap { history.thumbnails.cached($0, size: .large) ?? history.thumbnails.cached($0, size: .row) }
         cardHeight = card.show(current, image: image, width: Self.width - 20)
@@ -497,15 +536,123 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         let q = query.trimmingCharacters(in: .whitespaces)
         emptyLabel.stringValue = isSearching ? "No matches for \u{201C}\(q)\u{201D}" : "Earlier copies show up here."
         emptyLabel.isHidden = !rows.isEmpty
+        if selecting {
+            let n = selection.count
+            countLabel.stringValue = n == 0 ? "Pick items to copy together" : "\(n) selected"
+            selectCopy.setTitle(n > 1 ? "Copy \(n)" : "Copy")
+            selectCopy.isEnabled = n > 0
+            selectCopy.alphaValue = n > 0 ? 1 : 0.4
+        }
     }
 
     private func setConfirming(_ on: Bool) {
-        confirming = on
-        countLabel.isHidden = on
-        clearButton.isHidden = on
-        confirmLabel.isHidden = !on
-        confirmCancel.isHidden = !on
-        confirmClear.isHidden = !on
+        confirming = on && !selecting
+        let normal = !confirming && !selecting
+        countLabel.isHidden = confirming
+        clearButton.isHidden = !normal
+        confirmLabel.isHidden = !confirming
+        confirmCancel.isHidden = !confirming
+        confirmClear.isHidden = !confirming
+        selectCancel.isHidden = !selecting
+        selectCopy.isHidden = !selecting
+    }
+
+    /// Enters or leaves select mode. Leaving drops the picks.
+    private func setSelecting(_ on: Bool) {
+        guard selecting != on else { return }
+        selecting = on
+        selection = ClipboardSelection()
+        setConfirming(false)
+        let accent = ClipboardStyle.accent
+        selectButton.setSymbol(on ? "checkmark.circle.fill" : "checkmark.circle", size: 13,
+                               color: on ? accent : NSColor.white.withAlphaComponent(0.8))
+        selectButton.hint = on ? "Done selecting  Esc" : "Select items to copy together  ⌘A"
+        // The current item joins (or leaves) the list; every row gains (or loses) its check.
+        let row = table.selectedRow
+        rows = computeRows()
+        table.reloadData()
+        if !rows.isEmpty { table.selectRowIndexes([max(0, min(row, rows.count - 1))], byExtendingSelection: false) }
+        updateFooter()
+        layoutContent()
+    }
+
+    /// The picked items, oldest first: the order they go on the clipboard.
+    private var pickedItems: [ClipboardItem] {
+        selection.ids.compactMap(history.store.item(id:)).sorted { $0.firstCopiedAt < $1.firstCopiedAt }
+    }
+
+    private func checkState(for row: Row) -> ClipboardSelection.State? {
+        guard selecting else { return nil }
+        switch row {
+        case .item(let item, _): return selection.contains(item.id) ? .all : ClipboardSelection.State.none
+        case .folder(let group, _): return selection.state(of: group.items.map(\.id))
+        case .more: return nil
+        }
+    }
+
+    /// Picks or unpicks a row (a folder: all of its members).
+    private func toggle(row r: Int) {
+        guard selecting, r >= 0, r < rows.count else { return }
+        switch rows[r] {
+        case .item(let item, _): selection.toggle(item.id)
+        case .folder(let group, _): selection.toggleAll(group.items.map(\.id))
+        case .more:
+            showMore()
+            return
+        }
+        refreshChecks()
+    }
+
+    private func toggleHighlighted() { toggle(row: table.selectedRow) }
+
+    /// ⌘A: enters select mode if needed and picks every shown item (or unpicks them all
+    /// when they already are).
+    private func selectAllShown() {
+        if !selecting { setSelecting(true) }
+        var ids: [String] = []
+        for row in rows {
+            switch row {
+            case .item(let item, _): ids.append(item.id)
+            case .folder(let group, _): ids.append(contentsOf: group.items.map(\.id))
+            case .more: break
+            }
+        }
+        var seen = Set<String>()
+        selection.toggleAll(ids.filter { seen.insert($0).inserted })
+        refreshChecks()
+    }
+
+    /// Updates the checks on the rows on screen and the footer, without reloading rows.
+    private func refreshChecks() {
+        table.enumerateAvailableRowViews { rowView, r in
+            guard r < rows.count else { return }
+            let state = checkState(for: rows[r])
+            if let cell = rowView.view(atColumn: 0) as? ClipboardRowCell { cell.checkState = state }
+            if let cell = rowView.view(atColumn: 0) as? ClipboardFolderCell { cell.checkState = state }
+        }
+        updateFooter()
+        layoutContent()
+    }
+
+    /// Copy (the button, Return or ⌘C in select mode): the picks become one group on the
+    /// clipboard and select mode ends.
+    private func copySelection(close: Bool) {
+        let ids = pickedItems.map(\.id)
+        guard !ids.isEmpty else {
+            flashFooter("Pick items to copy first")
+            return
+        }
+        switch history.copySelection(ids) {
+        case .copied:
+            setSelecting(false)
+            table.scrollRowToVisible(0)
+            card.flashCopied()
+            if close { self.close(restoreFocus: true) }
+        case .missingFiles:
+            flashFooter("Those files no longer exist")
+        case .notFound:
+            break
+        }
     }
 
     /// A short message in the footer (e.g. a file that no longer exists).
@@ -534,6 +681,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         titleLabel.frame = NSRect(x: 16, y: top - 28, width: w - 100, height: 18)
         closeButton.frame = NSRect(x: w - 38, y: top - 31, width: 26, height: 24)
         pauseButton.frame = NSRect(x: w - 66, y: top - 31, width: 26, height: 24)
+        selectButton.frame = NSRect(x: w - 94, y: top - 31, width: 26, height: 24)
         top -= Self.headerHeight
 
         if !banner.isHidden {
@@ -558,6 +706,9 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
         confirmClear.frame.origin = NSPoint(x: w - 12 - confirmClear.frame.width, y: (fh - 22) / 2)
         confirmCancel.frame.origin = NSPoint(x: confirmClear.frame.minX - 6 - confirmCancel.frame.width, y: (fh - 22) / 2)
         confirmLabel.frame = NSRect(x: 16, y: (fh - 16) / 2, width: confirmCancel.frame.minX - 22, height: 16)
+        selectCopy.frame.origin = NSPoint(x: w - 12 - selectCopy.frame.width, y: (fh - 22) / 2)
+        selectCancel.frame.origin = NSPoint(x: selectCopy.frame.minX - 6 - selectCancel.frame.width, y: (fh - 22) / 2)
+        if selecting { countLabel.frame.size.width = selectCancel.frame.minX - 22 }
 
         scroll.frame = NSRect(x: 0, y: fh, width: w, height: max(40, top - fh))
         emptyLabel.frame = NSRect(x: 16, y: scroll.frame.maxY - 60, width: w - 32, height: 16)
@@ -575,6 +726,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
     @objc private func rowClicked() {
         let r = table.clickedRow
         guard r >= 0, r < rows.count else { return }
+        if selecting { return toggle(row: r) }
         switch rows[r] {
         case .more: showMore()
         case .item(let item, let member):
@@ -627,6 +779,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
 
     /// Return (close: true) or ⌘C (close: false) on the selected row.
     private func activateSelection(close: Bool) {
+        if selecting { return copySelection(close: close) }
         let r = table.selectedRow
         guard r >= 0, r < rows.count else {
             if close { self.close(restoreFocus: true) }
@@ -709,7 +862,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
     }
 
     private func deleteSelection() {
-        guard let item = selectedItem() else { return }
+        guard !selecting, let item = selectedItem() else { return }
         let r = table.selectedRow
         history.delete(id: item.id)
         if !rows.isEmpty { table.selectRowIndexes([min(r, rows.count - 1)], byExtendingSelection: false) }
@@ -724,6 +877,8 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
             window.makeFirstResponder(table)
         } else if confirming {
             setConfirming(false)
+        } else if selecting {
+            setSelecting(false)
         } else {
             close(restoreFocus: true)
         }
@@ -843,6 +998,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
             let cell = (tableView.makeView(withIdentifier: ClipboardFolderCell.identifier, owner: nil)
                 as? ClipboardFolderCell) ?? ClipboardFolderCell(frame: .zero)
             cell.configure(group, open: open, thumbnails: history.thumbnails, now: Date())
+            cell.checkState = checkState(for: rows[row])
             return cell
         case .item(let item, let member):
             let cell = (tableView.makeView(withIdentifier: ClipboardRowCell.identifier, owner: nil)
@@ -854,6 +1010,7 @@ final class ClipboardPanelController: NSObject, NSTableViewDataSource, NSTableVi
             let id = item.id
             cell.onPin = { [weak self] in self?.history.togglePin(id: id) }
             cell.onDelete = { [weak self] in self?.history.delete(id: id) }
+            cell.checkState = checkState(for: rows[row])
             return cell
         }
     }
@@ -1011,7 +1168,7 @@ final class ClipboardPanelWindow: NSPanel {
 // MARK: - Table
 
 /// Keyboard for the list: ↑/↓ (built in), →/← (open/close a folder), Return, ⌫, Esc, ⌘F,
-/// ⌘C, and typing to search.
+/// ⌘C, ⌘A (select mode, all), and typing to search (Space picks a row in select mode).
 final class ClipboardTableView: NSTableView {
     var onReturn: (() -> Void)?
     var onCopy: (() -> Void)?
@@ -1020,6 +1177,7 @@ final class ClipboardTableView: NSTableView {
     var onFind: (() -> Void)?
     var onType: ((String) -> Void)?
     var onArrow: ((_ open: Bool) -> Void)?
+    var onSelectAll: (() -> Void)?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -1037,6 +1195,7 @@ final class ClipboardTableView: NSTableView {
         if flags.contains(.command) {
             if bare == "f" { onFind?(); return }
             if bare == "c" { onCopy?(); return }
+            if bare == "a" { onSelectAll?(); return }
             super.keyDown(with: event)
             return
         }
