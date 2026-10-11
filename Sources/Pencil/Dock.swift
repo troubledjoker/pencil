@@ -157,11 +157,12 @@ final class DockController {
             guard let self else { return }
             self.shapesButton.isSelected = open || self.controller.mode.tool?.isShape == true
         }
-        // Each eraser button turns its eraser on, or back to the last ink tool when it already is.
-        editPill.onEraser = { [weak self] eraser in
+        // The pill's tool buttons (the last ink tool, the two erasers) toggle: on, or off
+        // (stop drawing, ink stays) when that tool is already on.
+        editPill.onTool = { [weak self] picked in
             guard let self else { return }
-            let tool = self.controller.mode.tool
-            self.controller.setMode(.draw(tool == eraser ? self.lastInkTool : eraser))
+            let tool = picked ?? self.lastInkTool
+            self.controller.setMode(self.controller.mode.tool == tool ? .passThrough : .draw(tool))
         }
         flyout.onOpenChange = { [weak self] open in
             guard let self else { return }
@@ -331,6 +332,7 @@ final class DockController {
     }
 
     func refresh() {
+        if let tool = controller.mode.tool, !tool.isEraser { lastInkTool = tool } // before the pill reads it
         updateEditPill(duration: 0.18)
         pencil.ringColor = controller.mode.isDrawing ? nsColor(controller.color) : nil
         pencil.setArtAngle(artAngle(expanded: isExpanded),
@@ -342,7 +344,6 @@ final class DockController {
         recordButton.hint = Shortcuts.hint(recording ? "Stop recording" : "Screen recording", .record)
         let ink = nsColor(controller.color)
         let tool = controller.mode.tool
-        if let tool, !tool.isEraser { lastInkTool = tool }
         for (t, b) in toolButtons {
             let active = tool == t
             b.isSelected = active
@@ -673,7 +674,7 @@ final class DockController {
         // The erasers show while there's ink to erase (or one is the tool in use).
         let showEraser = hasInk || drawingTool?.isEraser == true
         let size = DockGeometry.editPillSize(showingSize: drawingTool != nil,
-                                             editButtons: 2 + (showEraser ? 2 : 0) + (hasInk ? 1 : 0))
+                                             editButtons: 3 + (showEraser ? 2 : 0) + (hasInk ? 1 : 0))
         let frame = DockGeometry.editPillFrame(anchor: anchor, x: s.frame.minX, size: size,
                                                preferBelow: preferBelow, in: s.visibleFrame)
         if let drawingTool {
@@ -681,12 +682,11 @@ final class DockController {
             editPill.configure(size: .init(level: controller.strokeSize.level, tool: drawingTool,
                                            color: drawingTool.isEraser ? .white : controller.color,
                                            onTop: DockGeometry.sizeSectionOnTop(pill: frame, in: s.visibleFrame)),
-                               inkColor: controller.color, hasInk: hasInk, showEraser: showEraser,
-                               erasing: drawingTool.isEraser ? drawingTool : nil,
-                               canUndo: controller.store.canUndo)
+                               inkColor: controller.color, inkTool: lastInkTool, active: drawingTool,
+                               hasInk: hasInk, showEraser: showEraser, canUndo: controller.store.canUndo)
         } else {
-            editPill.configure(size: nil, inkColor: controller.color, hasInk: hasInk, showEraser: showEraser,
-                               erasing: nil, canUndo: controller.store.canUndo)
+            editPill.configure(size: nil, inkColor: controller.color, inkTool: lastInkTool, active: nil,
+                               hasInk: hasInk, showEraser: showEraser, canUndo: controller.store.canUndo)
         }
         editPill.show(at: frame, duration: duration)
     }
@@ -1972,8 +1972,8 @@ final class EditPill {
     var onClear: (() -> Void)?
     /// Capture the drawing (cropped to the ink).
     var onCapture: (() -> Void)?
-    /// An eraser button was clicked (`.eraser` or `.objectEraser`).
-    var onEraser: ((Tool) -> Void)?
+    /// A tool button was clicked: an eraser, or nil for the last ink tool.
+    var onTool: ((Tool?) -> Void)?
     /// The color chip was clicked; its rect in screen coordinates.
     var onColor: ((NSRect) -> Void)?
     /// Shows the color chip as open (its flyout is out).
@@ -1991,6 +1991,7 @@ final class EditPill {
     private let undo: DockButton
     private let clear: DockButton
     private let capture: DockButton
+    private let inkTool: DockButton
     private let eraser: DockButton
     private let objectEraser: DockButton
     private let chip = DockSwatch()
@@ -2029,8 +2030,10 @@ final class EditPill {
                             hint: Shortcuts.hint("Eraser: rubs out what you drag over", .eraser))
         objectEraser = DockButton(symbol: Tool.objectEraser.symbolName,
                                   hint: Shortcuts.hint("Stroke eraser: removes whole lines you touch", .objectEraser))
-        eraser.onClick = { [weak self] in self?.onEraser?(.eraser) }
-        objectEraser.onClick = { [weak self] in self?.onEraser?(.objectEraser) }
+        inkTool = DockButton(symbol: Tool.pen.symbolName, hint: "Pen")
+        inkTool.onClick = { [weak self] in self?.onTool?(nil) }
+        eraser.onClick = { [weak self] in self?.onTool?(.eraser) }
+        objectEraser.onClick = { [weak self] in self?.onTool?(.objectEraser) }
         undo.onClick = { [weak self] in self?.onUndo?() }
         clear.onClick = { [weak self] in self?.onClear?() }
         capture.onClick = { [weak self] in self?.onCapture?() }
@@ -2050,25 +2053,30 @@ final class EditPill {
             if inside { self.cancelClose() } else { self.scheduleClose() }
         }
         slider.onPressEnd = { [weak self] in self?.scheduleClose() }
-        for v in [eraser, objectEraser, undo, clear, capture, chip, dot, divider] as [NSView] { effect.addSubview(v) }
-        configure(size: nil, inkColor: .red, hasInk: true, showEraser: true, erasing: nil, canUndo: true)
+        for v in [inkTool, eraser, objectEraser, undo, clear, capture, chip, dot, divider] as [NSView] { effect.addSubview(v) }
+        configure(size: nil, inkColor: .red, inkTool: .pen, active: nil, hasInk: true, showEraser: true, canUndo: true)
     }
 
     /// Lays out the controls for the next frame: with the size section (`size` non-nil:
-    /// color chip and size dot) or the edit block only. The edit block is the two erasers
-    /// (while there's ink), Undo, Clear, and Capture drawing (while there's ink). `erasing`
-    /// is the eraser in use, if any. Undo dims when there's nothing to undo.
-    func configure(size: SizeState?, inkColor: InkColor, hasInk: Bool, showEraser: Bool, erasing: Tool?,
-                   canUndo: Bool) {
+    /// color chip and size dot) or the edit block only. The edit block is the last ink tool
+    /// (`inkTool`: pen, highlighter, laser or a shape), the two erasers (while there's ink),
+    /// Undo, Clear, and Capture drawing (while there's ink). `active` is the tool in use,
+    /// if any. Undo dims when there's nothing to undo.
+    func configure(size: SizeState?, inkColor: InkColor, inkTool tool: Tool, active: Tool?, hasInk: Bool,
+                   showEraser: Bool, canUndo: Bool) {
         let w = DockGeometry.editPillWidth
         let showSize = size != nil
         for v in [dot, divider, chip] as [NSView] { v.isHidden = !showSize }
         capture.isHidden = !hasInk
         eraser.isHidden = !showEraser
         objectEraser.isHidden = !showEraser
-        eraser.isSelected = erasing == .eraser
-        objectEraser.isSelected = erasing == .objectEraser
-        let buttons = (showEraser ? [eraser, objectEraser] : []) + [undo, clear] + (hasInk ? [capture] : [])
+        eraser.isSelected = active == .eraser
+        objectEraser.isSelected = active == .objectEraser
+        inkTool.setSymbol(tool.symbolName)
+        inkTool.hint = tool.displayName + (active == tool ? " · click to stop drawing" : "")
+        inkTool.isSelected = active == tool
+        inkTool.contentTint = active == tool ? nsColor(inkColor) : nil
+        let buttons = [inkTool] + (showEraser ? [eraser, objectEraser] : []) + [undo, clear] + (hasInk ? [capture] : [])
         undo.alphaValue = canUndo ? 1 : 0.35
         clear.alphaValue = hasInk ? 1 : 0.35
         chip.color = inkColor

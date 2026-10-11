@@ -187,8 +187,9 @@ Every global key works from any app, even with the toolbar collapsed.
   **+ / −** in the floating pill, or scroll over the size dot. Ink you already drew keeps its width.
   The size also sets how big the erasers are; the cursor is a circle that size.
 - **Erasers:** both are in the floating pill once there's ink: the eraser (rubs out what you drag
-  over) and the stroke eraser (removes whole lines). Click the active one again to go back to
-  your pen. One drag is one undo step, so **Z** brings back everything that drag erased.
+  over) and the stroke eraser (removes whole lines). Above them is your last drawing tool, so
+  one click takes you back to it. Every tool button in the pill toggles: click the lit one to
+  stop drawing (the ink stays), click again to carry on. One drag is one undo step, so **Z** brings back everything that drag erased.
 - **Undo** steps back through strokes, erases and Clear alike.
 - **Undo / Clear / Capture drawing:** a small pill shows up next to the pencil whenever there's
   ink on screen. Capture drawing (the camera) only appears once there's ink to capture.
@@ -277,7 +278,7 @@ Every button has its name under it.
 - **Clipboard:** the clipboard history sidebar
 - **Off** (stop drawing, hide the ink, collapse) and **Quit**
 
-The two erasers, Undo, Clear and Capture drawing are in the floating pill next to the pencil,
+Your last drawing tool (pen, highlighter, laser or shape), the two erasers, Undo, Clear and Capture drawing are in the floating pill next to the pencil,
 and only once there's ink. Clicking the pencil, or anywhere else, closes the toolbar.
 
 The toolbar opens downward, or upward when the tab is near the bottom of the screen. It
